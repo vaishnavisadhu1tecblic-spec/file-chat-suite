@@ -6,11 +6,13 @@ import {
   FiFileText,
   FiClock,
 } from "react-icons/fi";
+import { useNavigate } from "react-router-dom";
 
 import Sidebar from "../../components/layout/Sidebar";
 import Navbar from "../../components/layout/Navbar";
 
 function Dashboard() {
+  const navigate = useNavigate();
   const uploads = [
     {
       name: "Brand-guidelines-v4.pdf",
@@ -144,7 +146,10 @@ function Dashboard() {
               <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100">
                 <h2 className="font-semibold text-lg">Recent Uploads</h2>
 
-                <button className="text-sm text-gray-700 flex items-center gap-1">
+                <button
+                  className="text-sm text-gray-700 flex items-center gap-1"
+                  onClick={() => navigate("/files")}
+                >
                   View all ↗
                 </button>
               </div>
@@ -179,7 +184,12 @@ function Dashboard() {
               <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100">
                 <h2 className="font-semibold text-lg">Recent Chats</h2>
 
-                <button className="text-sm text-gray-700">Open ↗</button>
+                <button
+                  className="text-sm text-gray-700"
+                  onClick={() => navigate("/chat")}
+                >
+                  Open ↗
+                </button>
               </div>
 
               {chats.map((chat, index) => (

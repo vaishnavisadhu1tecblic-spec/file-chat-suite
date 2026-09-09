@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   FiGrid,
   FiMessageSquare,
@@ -10,6 +10,7 @@ import {
 
 function Sidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
 
   const menus = [
     { name: "Dashboard", icon: <FiGrid />, path: "/dashboard" },
@@ -69,7 +70,14 @@ function Sidebar() {
           </div>
         </div>
 
-        <button className="flex items-center gap-2 mt-6 text-gray-600 hover:text-red-500">
+        <button
+          className="flex items-center gap-2 mt-6 text-gray-600 hover:text-red-500"
+          onClick={() => {
+            localStorage.removeItem("token");
+            localStorage.removeItem("user");
+            navigate("/");
+          }}
+        >
           <FiLogOut />
           Logout
         </button>

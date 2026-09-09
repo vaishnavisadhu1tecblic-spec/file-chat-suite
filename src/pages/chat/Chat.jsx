@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import socket from "../../socket";
+import { appendUniqueMessage } from "../../utils/chatUtils";
 
 import {
   FiSearch,
@@ -363,6 +364,22 @@ function Chat() {
   ]);
 
   // =====================================================
+  // LOCAL MESSAGE HELPERS
+  // =====================================================
+
+  const addMessageToChat = (chatId, message) => {
+    setMessagesByChat((prev) => {
+      const existingMessages = prev[chatId] || [];
+      const nextMessages = appendUniqueMessage(existingMessages, message);
+
+      return {
+        ...prev,
+        [chatId]: nextMessages,
+      };
+    });
+  };
+
+  // =====================================================
   // RECEIVE PRIVATE MESSAGE
   // =====================================================
 
@@ -383,21 +400,6 @@ function Chat() {
 
       setMessagesByChat((prev) => {
         const existingMessages = prev[message.chatId] || [];
-
-        // =================================================
-        // PREVENT DUPLICATE
-        // =================================================
-
-        const alreadyExists = existingMessages.some(
-          (item) =>
-            item._id && message._id && String(item._id) === String(message._id),
-        );
-
-        if (alreadyExists) {
-          console.log("DUPLICATE MESSAGE IGNORED");
-
-          return prev;
-        }
 
         // =================================================
         // IMPORTANT
@@ -429,10 +431,11 @@ function Chat() {
 
         console.log("FINAL MESSAGE TYPE:", newMessage.type);
 
+        const nextMessages = appendUniqueMessage(existingMessages, newMessage);
+
         return {
           ...prev,
-
-          [message.chatId]: [...existingMessages, newMessage],
+          [message.chatId]: nextMessages,
         };
       });
     };
@@ -458,31 +461,15 @@ function Chat() {
 
       setMessagesByChat((prev) => {
         const existingMessages = prev[message.chatId] || [];
-
-        const alreadyExists = existingMessages.some(
-          (item) =>
-            item._id && message._id && String(item._id) === String(message._id),
-        );
-
-        if (alreadyExists) {
-          return prev;
-        }
+        const newMessage = {
+          ...message,
+          type:
+            String(message.senderId) === currentUserId ? "sent" : "received",
+        };
 
         return {
           ...prev,
-
-          [message.chatId]: [
-            ...existingMessages,
-
-            {
-              ...message,
-
-              type:
-                String(message.senderId) === currentUserId
-                  ? "sent"
-                  : "received",
-            },
-          ],
+          [message.chatId]: appendUniqueMessage(existingMessages, newMessage),
         };
       });
     };
@@ -515,11 +502,6 @@ function Chat() {
       return;
     }
 
-    if (!socket.connected) {
-      console.log("SOCKET IS NOT CONNECTED");
-      return;
-    }
-
     if (!selectedUser) {
       console.log("SELECTED USER MISSING");
       return;
@@ -534,6 +516,8 @@ function Chat() {
       hour: "2-digit",
       minute: "2-digit",
     });
+
+    const localId = `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
     console.log("=================================");
     console.log("SEND MESSAGE");
@@ -555,14 +539,23 @@ function Chat() {
       }
 
       const privateMessage = {
+        chatId: activeChatId,
+        senderId: currentUserId,
         receiverId: String(selectedUser.receiverId),
         text,
         time,
+        type: "sent",
+        _id: localId,
       };
 
       console.log("SENDING PRIVATE MESSAGE:", privateMessage);
 
-      socket.emit("send_private_message", privateMessage);
+      if (socket.connected) {
+        socket.emit("send_private_message", privateMessage);
+      } else {
+        console.log("SOCKET IS NOT CONNECTED - MESSAGE SAVED LOCALLY");
+        addMessageToChat(activeChatId, privateMessage);
+      }
     } else {
       // =================================================
       // GROUP CHAT
@@ -570,13 +563,21 @@ function Chat() {
 
       const groupMessage = {
         chatId: selectedUser.id,
+        senderId: currentUserId,
         text,
         time,
+        type: "sent",
+        _id: localId,
       };
 
       console.log("SENDING GROUP MESSAGE:", groupMessage);
 
-      socket.emit("send_message", groupMessage);
+      if (socket.connected) {
+        socket.emit("send_message", groupMessage);
+      } else {
+        console.log("SOCKET IS NOT CONNECTED - MESSAGE SAVED LOCALLY");
+        addMessageToChat(activeChatId, groupMessage);
+      }
     }
 
     setMessageText("");
@@ -594,7 +595,39 @@ function Chat() {
       return;
     }
 
-    console.log("Selected file:", file.name);
+    const time = new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const size = `${Math.max(1, Math.round(file.size / 1024))} KB`;
+
+    const fileMessage = {
+      _id: `file-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      type: "file",
+      file: file.name,
+      size,
+      text: file.name,
+      time,
+      senderId: currentUserId,
+      receiverId:
+        selectedUser?.type === "private" ? selectedUser.receiverId : null,
+    };
+
+    if (selectedUser?.type === "private") {
+      fileMessage.chatId = activeChatId;
+      fileMessage.receiverId = String(selectedUser.receiverId);
+      fileMessage.type = "file";
+    } else {
+      fileMessage.chatId = selectedUser?.id;
+      fileMessage.type = "file";
+    }
+
+    addMessageToChat(activeChatId, fileMessage);
+
+    console.log("Selected file:", file.name, size);
+
+    event.target.value = "";
   };
 
   // =====================================================

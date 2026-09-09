@@ -9,6 +9,7 @@ import { FaRegEye, FaRegEyeSlash } from "react-icons/fa";
 import { useState } from "react";
 
 import { useNavigate } from "react-router-dom";
+import ForgotPassword from "./ForgotPassword";
 
 function Login() {
   const dispatch = useDispatch();
@@ -28,7 +29,11 @@ function Login() {
   };
 
   const [showPassword, setShowPassword] = useState(false);
-  // const [showHidepage, setShowhidepage] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+
+  if (showForgotPassword) {
+    return <ForgotPassword setPage={() => setShowForgotPassword(false)} />;
+  }
 
   const handleLogin = async () => {
     try {
@@ -99,7 +104,11 @@ function Login() {
         <div className="flex justify-between mb-2">
           <label className="text-gray-700">Password</label>
 
-          <button type="button" className="text-blue-600 text-sm">
+          <button
+            type="button"
+            onClick={() => setShowForgotPassword(true)}
+            className="text-blue-600 text-sm"
+          >
             Forgot password?
           </button>
         </div>
