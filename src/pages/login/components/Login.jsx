@@ -31,29 +31,6 @@ function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
 
-  if (showForgotPassword) {
-    return <ForgotPassword setPage={() => setShowForgotPassword(false)} />;
-  }
-
-  const handleLogin = async () => {
-    try {
-      const response = await loginUser(formData);
-
-      console.log(response.data);
-
-      alert(response.data.message);
-
-      localStorage.setItem("token", response.data.token);
-
-      localStorage.setItem("user", JSON.stringify(response.data.user));
-
-      navigate("/dashboard");
-    } catch (error) {
-      console.log(error);
-      alert(error.response?.data?.message || "Login Failed");
-    }
-  };
-
   const googleLogin = useGoogleLogin({
     flow: "implicit",
 
@@ -76,6 +53,29 @@ function Login() {
       alert("Google Login Failed");
     },
   });
+
+  if (showForgotPassword) {
+    return <ForgotPassword setPage={() => setShowForgotPassword(false)} />;
+  }
+
+  const handleLogin = async () => {
+    try {
+      const response = await loginUser(formData);
+
+      console.log(response.data);
+
+      alert(response.data.message);
+
+      localStorage.setItem("token", response.data.token);
+
+      localStorage.setItem("user", JSON.stringify(response.data.user));
+
+      navigate("/dashboard");
+    } catch (error) {
+      console.log(error);
+      alert(error.response?.data?.message || "Login Failed");
+    }
+  };
 
   return (
     <div className="bg-white rounded-3xl shadow-xl p-10 w-full max-w-md">

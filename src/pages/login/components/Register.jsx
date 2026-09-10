@@ -1,5 +1,4 @@
 import { registerUser } from "../../../api/authApi";
-import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import { showLogin } from "../../../redux/pageSlice";
 import { FcGoogle } from "react-icons/fc";
