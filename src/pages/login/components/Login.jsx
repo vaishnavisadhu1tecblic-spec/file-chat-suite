@@ -1,5 +1,6 @@
 import { useGoogleLogin } from "@react-oauth/google";
 import axios from "axios";
+import { Link } from "react-router-dom";
 
 import { loginUser } from "../../../api/authApi";
 import { useDispatch } from "react-redux";
@@ -9,7 +10,6 @@ import { FaRegEye, FaRegEyeSlash } from "react-icons/fa";
 import { useState } from "react";
 
 import { useNavigate } from "react-router-dom";
-import ForgotPassword from "./ForgotPassword";
 
 function Login() {
   const dispatch = useDispatch();
@@ -29,7 +29,6 @@ function Login() {
   };
 
   const [showPassword, setShowPassword] = useState(false);
-  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   const googleLogin = useGoogleLogin({
     flow: "implicit",
@@ -53,10 +52,6 @@ function Login() {
       alert("Google Login Failed");
     },
   });
-
-  if (showForgotPassword) {
-    return <ForgotPassword setPage={() => setShowForgotPassword(false)} />;
-  }
 
   const handleLogin = async () => {
     try {
@@ -104,13 +99,9 @@ function Login() {
         <div className="flex justify-between mb-2">
           <label className="text-gray-700">Password</label>
 
-          <button
-            type="button"
-            onClick={() => setShowForgotPassword(true)}
-            className="text-blue-600 text-sm"
-          >
+          <Link to="/forgot-password" className="text-blue-600 text-sm">
             Forgot password?
-          </button>
+          </Link>
         </div>
 
         <div className="relative">

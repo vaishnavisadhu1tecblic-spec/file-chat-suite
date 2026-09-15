@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   FiLock,
   FiEdit2,
@@ -9,15 +10,66 @@ import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/layout/Sidebar";
 import Navbar from "../../components/layout/Navbar";
 
+const DEFAULT_USER = {
+  name: "Alina Meyer",
+  username: "alina",
+  email: "alina@syncspace.io",
+};
+
 function Profile() {
   const navigate = useNavigate();
 
-  const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+  const [user, setUser] = useState(DEFAULT_USER);
 
-  const displayName = storedUser?.name || storedUser?.username || "Alina Meyer";
-  const email = storedUser?.email || "alina@syncspace.io";
-  const username = storedUser?.username || "alina";
-  const firstLetter = String(displayName).trim().charAt(0).toUpperCase();
+  // =====================================================
+  // LOAD USER
+  // =====================================================
+
+  const loadUser = () => {
+    try {
+      const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+
+      setUser({
+        name: storedUser?.name || storedUser?.username || DEFAULT_USER.name,
+
+        username: storedUser?.username || DEFAULT_USER.username,
+
+        email: storedUser?.email || DEFAULT_USER.email,
+      });
+    } catch (error) {
+      console.error("Load profile user error:", error);
+
+      setUser(DEFAULT_USER);
+    }
+  };
+
+  // =====================================================
+  // INITIAL LOAD + SETTINGS UPDATE
+  // =====================================================
+
+  useEffect(() => {
+    loadUser();
+
+    const handleUserUpdated = () => {
+      loadUser();
+    };
+
+    window.addEventListener("userUpdated", handleUserUpdated);
+
+    return () => {
+      window.removeEventListener("userUpdated", handleUserUpdated);
+    };
+  }, []);
+
+  const displayName = user.name;
+  const email = user.email;
+  const username = user.username;
+
+  const firstLetter = String(displayName).trim().charAt(0).toUpperCase() || "A";
+
+  // =====================================================
+  // RECENT UPLOADS
+  // =====================================================
 
   const uploads = [
     {
@@ -42,6 +94,10 @@ function Profile() {
     },
   ];
 
+  // =====================================================
+  // SHARED FILES
+  // =====================================================
+
   const sharedFiles = [
     {
       name: "Q3-roadmap.docx",
@@ -59,6 +115,10 @@ function Profile() {
       owner: "Priya Raman",
     },
   ];
+
+  // =====================================================
+  // SKILLS
+  // =====================================================
 
   const skills = [
     "Product Design",
@@ -79,7 +139,8 @@ function Profile() {
 
         <main className="flex-1 overflow-y-auto px-8 py-7">
           <div className="mx-auto w-full max-w-[800px]">
-            {/* Page Heading */}
+            {/* PAGE HEADING */}
+
             <div className="mb-5">
               <h1 className="text-[22px] font-bold tracking-tight text-gray-900">
                 Profile
@@ -90,20 +151,25 @@ function Profile() {
               </p>
             </div>
 
-            {/* Profile Header */}
+            {/* PROFILE HEADER */}
+
             <section className="overflow-hidden rounded-[14px] border border-gray-200 bg-white shadow-sm">
-              {/* Cover */}
+              {/* COVER */}
+
               <div className="h-[150px] bg-gradient-to-r from-[#f4f7fa] via-[#edf2f6] to-[#e3e9ef]" />
 
-              {/* Profile Information */}
+              {/* PROFILE INFORMATION */}
+
               <div className="relative flex min-h-[73px] items-center justify-between px-5 pb-3 pt-3">
                 <div className="flex min-w-0 items-center gap-3">
-                  {/* Avatar */}
+                  {/* AVATAR */}
+
                   <div className="-mt-[67px] flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#edf3ff] text-[17px] font-semibold text-[#315eff] shadow-sm">
                     {firstLetter}
                   </div>
 
-                  {/* User Details */}
+                  {/* USER DETAILS */}
+
                   <div className="min-w-0">
                     <h2 className="text-[14px] font-semibold leading-tight text-gray-900">
                       {displayName}
@@ -127,7 +193,8 @@ function Profile() {
                   </div>
                 </div>
 
-                {/* Actions */}
+                {/* ACTIONS */}
+
                 <div className="flex shrink-0 items-center gap-1.5">
                   <button
                     type="button"
@@ -150,11 +217,14 @@ function Profile() {
               </div>
             </section>
 
-            {/* Main Content */}
+            {/* MAIN CONTENT */}
+
             <section className="mt-4 grid grid-cols-[1fr_250px] gap-4">
-              {/* Left Column */}
+              {/* LEFT COLUMN */}
+
               <div className="min-w-0 space-y-4">
-                {/* About */}
+                {/* ABOUT */}
+
                 <section className="rounded-[14px] border border-gray-200 bg-white px-4 py-4 shadow-sm">
                   <h3 className="text-[11px] font-semibold text-gray-900">
                     About
@@ -169,7 +239,8 @@ function Profile() {
                   </p>
                 </section>
 
-                {/* Skills */}
+                {/* SKILLS */}
+
                 <section className="rounded-[14px] border border-gray-200 bg-white px-4 py-4 shadow-sm">
                   <h3 className="text-[11px] font-semibold text-gray-900">
                     Skills
@@ -187,7 +258,8 @@ function Profile() {
                   </div>
                 </section>
 
-                {/* Recent Uploads */}
+                {/* RECENT UPLOADS */}
+
                 <section className="rounded-[14px] border border-gray-200 bg-white px-4 py-4 shadow-sm">
                   <h3 className="text-[11px] font-semibold text-gray-900">
                     Recent Uploads
@@ -223,7 +295,8 @@ function Profile() {
                   </div>
                 </section>
 
-                {/* Shared Files */}
+                {/* SHARED FILES */}
+
                 <section className="rounded-[14px] border border-gray-200 bg-white px-4 py-4 shadow-sm">
                   <h3 className="text-[11px] font-semibold text-gray-900">
                     Shared Files
@@ -260,9 +333,11 @@ function Profile() {
                 </section>
               </div>
 
-              {/* Right Column */}
+              {/* RIGHT COLUMN */}
+
               <aside className="space-y-4">
-                {/* Total Uploads */}
+                {/* TOTAL UPLOADS */}
+
                 <section className="rounded-[14px] border border-gray-200 bg-white px-4 py-4 shadow-sm">
                   <div className="flex items-start justify-between">
                     <div>
@@ -285,7 +360,8 @@ function Profile() {
                   </div>
                 </section>
 
-                {/* Total Shared Files */}
+                {/* TOTAL SHARED FILES */}
+
                 <section className="rounded-[14px] border border-gray-200 bg-white px-4 py-4 shadow-sm">
                   <div className="flex items-start justify-between">
                     <div>
@@ -308,7 +384,8 @@ function Profile() {
                   </div>
                 </section>
 
-                {/* Storage Used */}
+                {/* STORAGE USED */}
+
                 <section className="rounded-[14px] border border-gray-200 bg-white px-4 py-4 shadow-sm">
                   <div className="flex items-start justify-between">
                     <div>

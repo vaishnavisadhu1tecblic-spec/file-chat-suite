@@ -24,6 +24,7 @@ function useAuth() {
     user,
     userId: user?._id || null,
     token: localStorage.getItem("token"),
+    isAuthenticated: Boolean(localStorage.getItem("token")),
   };
 }
 

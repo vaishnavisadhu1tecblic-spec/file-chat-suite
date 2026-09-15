@@ -1,6 +1,13 @@
 import { FiBell, FiSearch } from "react-icons/fi";
+import useAuth from "../../hooks/useAuth";
 
 function Navbar() {
+  const { user } = useAuth();
+  const avatarLetter = (user?.name || user?.username || "U")
+    .trim()
+    .charAt(0)
+    .toUpperCase();
+
   return (
     <header className="h-20 bg-white border-b border-gray-100 flex items-center justify-between px-8">
       {/* Search */}
@@ -25,7 +32,7 @@ function Navbar() {
         </button>
 
         <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-semibold">
-          V
+          {avatarLetter}
         </div>
       </div>
     </header>

@@ -1,32 +1,54 @@
 import { useEffect, useState } from "react";
+import { updateUser } from "../../api/authApi";
 import Sidebar from "../../components/layout/Sidebar";
 import Navbar from "../../components/layout/Navbar";
 
-function Settings() {
-  const [formData, setFormData] = useState({
-    name: "Alina Meyer",
-    username: "alina",
-    email: "alina@syncspace.io",
-  });
+const DEFAULT_USER = {
+  name: "Alina Meyer",
+  username: "alina",
+  email: "alina@syncspace.io",
+};
 
-  const [preferences, setPreferences] = useState({
-    emailNotifications: true,
-    desktopNotifications: true,
-    sharedLinkExpiry: false,
-  });
+const DEFAULT_PREFERENCES = {
+  emailNotifications: true,
+  desktopNotifications: true,
+  sharedLinkExpiry: false,
+};
+
+function Settings() {
+  const [formData, setFormData] = useState(DEFAULT_USER);
+  const [preferences, setPreferences] = useState(DEFAULT_PREFERENCES);
+  const [saved, setSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   useEffect(() => {
-    const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+    try {
+      const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
 
-    setFormData({
-      name: storedUser?.name || storedUser?.username || "Alina Meyer",
-      username: storedUser?.username || "alina",
-      email: storedUser?.email || "alina@syncspace.io",
-    });
+      const storedPreferences = JSON.parse(
+        localStorage.getItem("preferences") || "{}",
+      );
+
+      setFormData({
+        name: storedUser?.name || storedUser?.username || DEFAULT_USER.name,
+        username: storedUser?.username || DEFAULT_USER.username,
+        email: storedUser?.email || DEFAULT_USER.email,
+      });
+
+      setPreferences({
+        ...DEFAULT_PREFERENCES,
+        ...storedPreferences,
+      });
+    } catch (error) {
+      console.error("Load settings error:", error);
+    }
   }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+
+    setSaved(false);
 
     setFormData((prev) => ({
       ...prev,
@@ -35,23 +57,63 @@ function Settings() {
   };
 
   const handleToggle = (name) => {
+    setSaved(false);
+
     setPreferences((prev) => ({
       ...prev,
       [name]: !prev[name],
     }));
   };
 
-  const handleSave = () => {
-    const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+  const handleSave = async () => {
+    try {
+      const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+      const userId = storedUser?._id;
 
-    const updatedUser = {
-      ...storedUser,
-      name: formData.name,
-      username: formData.username,
-      email: formData.email,
-    };
+      if (!userId) {
+        setSaveError("Your session is missing. Please log in again.");
+        return;
+      }
 
-    localStorage.setItem("user", JSON.stringify(updatedUser));
+      const updatedUser = {
+        ...storedUser,
+        name: formData.name.trim(),
+        username: formData.username.trim(),
+        email: formData.email.trim(),
+      };
+
+      setIsSaving(true);
+      setSaveError("");
+
+      const response = await updateUser(userId, {
+        name: updatedUser.name,
+        username: updatedUser.username,
+        email: updatedUser.email,
+      });
+
+      localStorage.setItem(
+        "user",
+        JSON.stringify(response.data?.user || updatedUser),
+      );
+
+      localStorage.setItem("preferences", JSON.stringify(preferences));
+
+      window.dispatchEvent(new Event("userUpdated"));
+
+      setSaved(true);
+
+      setTimeout(() => {
+        setSaved(false);
+      }, 2500);
+    } catch (error) {
+      console.error("Save settings error:", error);
+      setSaveError(
+        error.response?.data?.message ||
+          "Unable to save your account settings. Please try again.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -64,6 +126,7 @@ function Settings() {
         <main className="flex-1 px-8 py-6">
           <div className="mx-auto w-full max-w-[640px]">
             {/* Page Header */}
+
             <div className="mb-5">
               <h1 className="text-[22px] font-semibold leading-tight text-gray-900">
                 Settings
@@ -75,6 +138,7 @@ function Settings() {
             </div>
 
             {/* Account */}
+
             <section className="rounded-[14px] border border-gray-200 bg-white px-4 py-4 shadow-sm">
               <h2 className="mb-4 text-[13px] font-semibold text-gray-900">
                 Account
@@ -82,6 +146,7 @@ function Settings() {
 
               <div className="grid grid-cols-2 gap-x-4 gap-y-4">
                 {/* Full Name */}
+
                 <div>
                   <label
                     htmlFor="name"
@@ -101,6 +166,7 @@ function Settings() {
                 </div>
 
                 {/* Username */}
+
                 <div>
                   <label
                     htmlFor="username"
@@ -120,6 +186,7 @@ function Settings() {
                 </div>
 
                 {/* Email */}
+
                 <div className="col-span-2">
                   <label
                     htmlFor="email"
@@ -140,24 +207,40 @@ function Settings() {
               </div>
 
               {/* Save Changes */}
-              <div className="mt-4 flex justify-end">
+
+              <div className="mt-4 flex items-center justify-end gap-3">
+                {saved && (
+                  <span className="text-[10px] font-medium text-green-600">
+                    Changes saved
+                  </span>
+                )}
+
+                {saveError && (
+                  <span className="text-[10px] font-medium text-red-600">
+                    {saveError}
+                  </span>
+                )}
+
                 <button
                   type="button"
                   onClick={handleSave}
+                  disabled={isSaving}
                   className="rounded-[10px] bg-[#315EFF] px-4 py-2 text-[10px] font-semibold text-white hover:bg-[#2852e8]"
                 >
-                  Save changes
+                  {isSaving ? "Saving..." : "Save changes"}
                 </button>
               </div>
             </section>
 
             {/* Preferences */}
+
             <section className="mt-4 rounded-[14px] border border-gray-200 bg-white px-4 py-4 shadow-sm">
               <h2 className="mb-3 text-[13px] font-semibold text-gray-900">
                 Preferences
               </h2>
 
               {/* Email Notifications */}
+
               <div className="flex items-center justify-between border-b border-gray-200 py-2.5">
                 <div>
                   <p className="text-[10px] font-medium text-gray-900">
@@ -169,27 +252,15 @@ function Settings() {
                   </p>
                 </div>
 
-                <button
-                  type="button"
+                <Toggle
+                  enabled={preferences.emailNotifications}
                   onClick={() => handleToggle("emailNotifications")}
-                  aria-label="Toggle email notifications"
-                  className={`relative h-[14px] w-[25px] shrink-0 rounded-full ${
-                    preferences.emailNotifications
-                      ? "bg-[#315EFF]"
-                      : "bg-gray-200"
-                  }`}
-                >
-                  <span
-                    className={`absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow-sm ${
-                      preferences.emailNotifications
-                        ? "left-[13px]"
-                        : "left-[2px]"
-                    }`}
-                  />
-                </button>
+                  label="Toggle email notifications"
+                />
               </div>
 
               {/* Desktop Notifications */}
+
               <div className="flex items-center justify-between border-b border-gray-200 py-2.5">
                 <div>
                   <p className="text-[10px] font-medium text-gray-900">
@@ -201,27 +272,15 @@ function Settings() {
                   </p>
                 </div>
 
-                <button
-                  type="button"
+                <Toggle
+                  enabled={preferences.desktopNotifications}
                   onClick={() => handleToggle("desktopNotifications")}
-                  aria-label="Toggle desktop notifications"
-                  className={`relative h-[14px] w-[25px] shrink-0 rounded-full ${
-                    preferences.desktopNotifications
-                      ? "bg-[#315EFF]"
-                      : "bg-gray-200"
-                  }`}
-                >
-                  <span
-                    className={`absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow-sm ${
-                      preferences.desktopNotifications
-                        ? "left-[13px]"
-                        : "left-[2px]"
-                    }`}
-                  />
-                </button>
+                  label="Toggle desktop notifications"
+                />
               </div>
 
               {/* Shared Link Expiry */}
+
               <div className="flex items-center justify-between py-2.5">
                 <div>
                   <p className="text-[10px] font-medium text-gray-900">
@@ -233,30 +292,36 @@ function Settings() {
                   </p>
                 </div>
 
-                <button
-                  type="button"
+                <Toggle
+                  enabled={preferences.sharedLinkExpiry}
                   onClick={() => handleToggle("sharedLinkExpiry")}
-                  aria-label="Toggle shared link expiry"
-                  className={`relative h-[14px] w-[25px] shrink-0 rounded-full ${
-                    preferences.sharedLinkExpiry
-                      ? "bg-[#315EFF]"
-                      : "bg-gray-200"
-                  }`}
-                >
-                  <span
-                    className={`absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow-sm ${
-                      preferences.sharedLinkExpiry
-                        ? "left-[13px]"
-                        : "left-[2px]"
-                    }`}
-                  />
-                </button>
+                  label="Toggle shared link expiry"
+                />
               </div>
             </section>
           </div>
         </main>
       </div>
     </div>
+  );
+}
+
+function Toggle({ enabled, onClick, label }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className={`relative h-[14px] w-[25px] shrink-0 rounded-full ${
+        enabled ? "bg-[#315EFF]" : "bg-gray-200"
+      }`}
+    >
+      <span
+        className={`absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow-sm ${
+          enabled ? "left-[13px]" : "left-[2px]"
+        }`}
+      />
+    </button>
   );
 }
 

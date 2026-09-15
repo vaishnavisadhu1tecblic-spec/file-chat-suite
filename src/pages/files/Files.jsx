@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   FiUploadCloud,
   FiSearch,
@@ -18,35 +18,47 @@ const BACKEND_BASE = "http://localhost:3005";
 function Files() {
   const [folders, setFolders] = useState([]);
   const [files, setFiles] = useState([]);
+
   const [selectedFolder, setSelectedFolder] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
+
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [folderLoading, setFolderLoading] = useState(false);
 
   const uploadInputRef = useRef(null);
+  const searchTimerRef = useRef(null);
 
   // =====================================================
   // LOAD FOLDERS
   // =====================================================
 
-  const loadFolders = async () => {
+  const loadFolders = useCallback(async () => {
     try {
+      setFolderLoading(true);
+
       const response = await api.get("/files/folders");
 
-      setFolders(response.data?.folders || []);
+      const loadedFolders = response.data?.folders || [];
+
+      setFolders(loadedFolders);
     } catch (error) {
       console.error("Load folders error:", error);
+
       console.error(
         "GET /api/files/folders:",
-        error?.response?.data || error?.message,
+        error?.response?.data || error?.message || error,
       );
+    } finally {
+      setFolderLoading(false);
     }
-  };
+  }, []);
 
   // =====================================================
   // LOAD FILES
   // =====================================================
 
-  const loadFiles = async (folderId = selectedFolder, search = searchTerm) => {
+  const loadFiles = useCallback(async (folderId, search) => {
     try {
       setLoading(true);
 
@@ -57,17 +69,22 @@ function Files() {
         },
       });
 
-      setFiles(response.data?.files || []);
+      const loadedFiles = response.data?.files || [];
+
+      setFiles(loadedFiles);
     } catch (error) {
       console.error("Load files error:", error);
 
-      console.error("GET /api/files:", error?.response?.data || error?.message);
+      console.error(
+        "GET /api/files:",
+        error?.response?.data || error?.message || error,
+      );
 
       setFiles([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   // =====================================================
   // INITIAL LOAD
@@ -76,7 +93,7 @@ function Files() {
   useEffect(() => {
     loadFolders();
     loadFiles("all", "");
-  }, []);
+  }, [loadFolders, loadFiles]);
 
   // =====================================================
   // CREATE FOLDER
@@ -89,10 +106,23 @@ function Files() {
       return;
     }
 
+    const trimmedName = folderName.trim();
+
     try {
-      await api.post("/files/folders", {
-        name: folderName.trim(),
-      });
+      setFolderLoading(true);
+
+      const payload = {
+        name: trimmedName,
+      };
+
+      // If a folder is selected, create the new folder inside it.
+      if (selectedFolder !== "all") {
+        payload.parentFolder = selectedFolder;
+      }
+
+      const response = await api.post("/files/folders", payload);
+
+      console.log("Folder created:", response.data);
 
       await loadFolders();
 
@@ -100,7 +130,13 @@ function Files() {
     } catch (error) {
       console.error("Create folder error:", error);
 
-      alert(error?.response?.data?.message || "Unable to create folder");
+      alert(
+        error?.response?.data?.message ||
+          error?.message ||
+          "Unable to create folder",
+      );
+    } finally {
+      setFolderLoading(false);
     }
   };
 
@@ -119,20 +155,25 @@ function Files() {
 
     if (!token) {
       alert("Please login again.");
+
+      event.target.value = "";
+
       return;
     }
 
     const formData = new FormData();
 
     // IMPORTANT:
-    // Backend multer expects "file"
+    // Backend multer expects the field name "file".
     formData.append("file", selectedFile);
 
+    // Upload into selected folder.
     if (selectedFolder !== "all") {
       formData.append("folderId", selectedFolder);
     }
 
     try {
+      setUploading(true);
       setLoading(true);
 
       const response = await fetch(`${BACKEND_BASE}/api/files/upload`, {
@@ -143,7 +184,7 @@ function Files() {
         body: formData,
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         throw new Error(data?.message || "Upload failed");
@@ -151,16 +192,14 @@ function Files() {
 
       console.log("File uploaded successfully:", data);
 
-      // Clear input so same file can be selected again
+      // Reset input so the same file can be selected again.
       event.target.value = "";
 
-      // Refresh files
-      await loadFiles(selectedFolder, "");
-
-      // Refresh folders
-      await loadFolders();
-
+      // Clear search after successful upload.
       setSearchTerm("");
+
+      // Reload folders and files.
+      await Promise.all([loadFolders(), loadFiles(selectedFolder, "")]);
 
       alert("File uploaded successfully");
     } catch (error) {
@@ -170,6 +209,7 @@ function Files() {
 
       event.target.value = "";
     } finally {
+      setUploading(false);
       setLoading(false);
     }
   };
@@ -183,8 +223,28 @@ function Files() {
 
     setSearchTerm(value);
 
-    loadFiles(selectedFolder, value);
+    // Prevent an old search request from being fired.
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+
+    // Small debounce so backend is not called for every single key.
+    searchTimerRef.current = setTimeout(() => {
+      loadFiles(selectedFolder, value);
+    }, 300);
   };
+
+  // =====================================================
+  // CLEAN SEARCH TIMER
+  // =====================================================
+
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+    };
+  }, []);
 
   // =====================================================
   // SELECT FOLDER
@@ -209,6 +269,11 @@ function Files() {
         return;
       }
 
+      if (!file?._id) {
+        alert("Invalid file.");
+        return;
+      }
+
       const response = await fetch(
         `${BACKEND_BASE}/api/files/${file._id}/download`,
         {
@@ -227,11 +292,12 @@ function Files() {
 
       const blob = await response.blob();
 
-      const url = window.URL.createObjectURL(blob);
+      const downloadUrl = window.URL.createObjectURL(blob);
 
       const anchor = document.createElement("a");
 
-      anchor.href = url;
+      anchor.href = downloadUrl;
+
       anchor.download = file.originalName || file.name || "download";
 
       document.body.appendChild(anchor);
@@ -240,7 +306,7 @@ function Files() {
 
       anchor.remove();
 
-      window.URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(downloadUrl);
     } catch (error) {
       console.error("Download error:", error);
 
@@ -253,6 +319,10 @@ function Files() {
   // =====================================================
 
   const handleDelete = async (fileId) => {
+    if (!fileId) {
+      return;
+    }
+
     const confirmed = window.confirm(
       "Are you sure you want to delete this file?",
     );
@@ -262,15 +332,30 @@ function Files() {
     }
 
     try {
+      setLoading(true);
+
       await api.delete(`/files/${fileId}`);
 
+      // Refresh current folder/search.
       await loadFiles(selectedFolder, searchTerm);
+
+      alert("File deleted successfully");
     } catch (error) {
       console.error("Delete error:", error);
 
-      alert(error?.response?.data?.message || "Delete failed");
+      alert(
+        error?.response?.data?.message || error?.message || "Delete failed",
+      );
+    } finally {
+      setLoading(false);
     }
   };
+
+  // =====================================================
+  // EMPTY FOLDER STATE
+  // =====================================================
+
+  const showFolderLoading = folderLoading && folders.length === 0;
 
   return (
     <div className="flex min-h-screen bg-[#F5F7FB]">
@@ -310,11 +395,13 @@ function Files() {
 
               <button
                 type="button"
-                className="flex h-12 items-center gap-2 rounded-xl border border-gray-200 bg-white px-5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50"
+                disabled={folderLoading || uploading}
+                className="flex h-12 items-center gap-2 rounded-xl border border-gray-200 bg-white px-5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={handleCreateFolder}
               >
                 <FiFolderPlus size={15} />
-                New Folder
+
+                {folderLoading ? "Creating..." : "New Folder"}
               </button>
 
               <input
@@ -326,13 +413,13 @@ function Files() {
 
               <button
                 type="button"
-                disabled={loading}
+                disabled={loading || uploading}
                 className="flex h-12 items-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={() => uploadInputRef.current?.click()}
               >
                 <FiUploadCloud size={15} />
 
-                {loading ? "Uploading..." : "Upload"}
+                {uploading ? "Uploading..." : "Upload"}
               </button>
             </div>
 
@@ -344,7 +431,11 @@ function Files() {
               </h2>
 
               <div className="flex min-h-[202px] flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-white p-5">
-                {folders.length === 0 ? (
+                {showFolderLoading ? (
+                  <div className="text-sm text-gray-500">
+                    Loading folders...
+                  </div>
+                ) : folders.length === 0 ? (
                   <>
                     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-500">
                       <FiFolderPlus size={18} />
@@ -361,7 +452,8 @@ function Files() {
 
                     <button
                       type="button"
-                      className="mt-4 flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-gray-700 shadow-sm"
+                      disabled={folderLoading}
+                      className="mt-4 flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-gray-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
                       onClick={handleCreateFolder}
                     >
                       <FiFolderPlus size={13} />
@@ -395,6 +487,7 @@ function Files() {
                       >
                         <span className="flex items-center gap-1">
                           <FiFolderPlus size={12} />
+
                           {folder.name}
                         </span>
                       </button>
@@ -420,7 +513,9 @@ function Files() {
                   <div className="col-span-4 rounded-2xl border border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-500">
                     {searchTerm
                       ? `No files found for "${searchTerm}"`
-                      : "No files found"}
+                      : selectedFolder !== "all"
+                        ? "No files in this folder"
+                        : "No files found"}
                   </div>
                 ) : (
                   files.map((file) => (
@@ -448,12 +543,34 @@ function Files() {
 function FileCard({ file, onDownload, onDelete }) {
   const [openMenu, setOpenMenu] = useState(false);
 
-  const fileType = file.type || "document";
+  const fileType = file?.type || "document";
 
   const imagePreviewUrl =
-    fileType === "image" && file.storedName
+    fileType === "image" && file?.storedName
       ? `${BACKEND_BASE}/uploads/${file.storedName}`
       : "";
+
+  // =====================================================
+  // CLOSE MENU WHEN CLICKING OUTSIDE
+  // =====================================================
+
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setOpenMenu(false);
+      }
+    };
+
+    if (openMenu) {
+      document.addEventListener("mousedown", handleOutsideClick);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+    };
+  }, [openMenu]);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
@@ -463,7 +580,9 @@ function FileCard({ file, onDownload, onDelete }) {
         {fileType === "document" && (
           <div className="flex h-11 w-9 flex-col rounded-md bg-white p-2 shadow-sm">
             <div className="mb-1 h-[3px] rounded bg-gray-200" />
+
             <div className="mb-1 h-[3px] rounded bg-gray-200" />
+
             <div className="h-[3px] w-6 rounded bg-gray-200" />
           </div>
         )}
@@ -520,31 +639,33 @@ function FileCard({ file, onDownload, onDelete }) {
 
         {/* MENU */}
 
-        {openMenu && (
-          <div className="absolute right-2 top-2 z-20 w-36 rounded-xl border border-gray-200 bg-white shadow-lg">
-            <button
-              type="button"
-              className="block w-full px-3 py-2 text-left text-xs font-semibold text-gray-700 hover:bg-gray-50"
-              onClick={() => {
-                setOpenMenu(false);
-                onDownload(file);
-              }}
-            >
-              Download
-            </button>
+        <div ref={menuRef}>
+          {openMenu && (
+            <div className="absolute right-2 top-2 z-20 w-36 rounded-xl border border-gray-200 bg-white shadow-lg">
+              <button
+                type="button"
+                className="block w-full px-3 py-2 text-left text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                onClick={() => {
+                  setOpenMenu(false);
+                  onDownload(file);
+                }}
+              >
+                Download
+              </button>
 
-            <button
-              type="button"
-              className="block w-full px-3 py-2 text-left text-xs font-semibold text-red-600 hover:bg-gray-50"
-              onClick={() => {
-                setOpenMenu(false);
-                onDelete(file._id);
-              }}
-            >
-              Delete
-            </button>
-          </div>
-        )}
+              <button
+                type="button"
+                className="block w-full px-3 py-2 text-left text-xs font-semibold text-red-600 hover:bg-gray-50"
+                onClick={() => {
+                  setOpenMenu(false);
+                  onDelete(file._id);
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* FILE INFORMATION */}

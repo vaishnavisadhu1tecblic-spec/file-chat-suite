@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   FiGrid,
@@ -11,6 +12,24 @@ import {
 function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const [sidebarZoom, setSidebarZoom] = useState(1);
+
+  useEffect(() => {
+    const initialDevicePixelRatio = window.devicePixelRatio || 1;
+
+    const updateSidebarZoom = () => {
+      const currentDevicePixelRatio = window.devicePixelRatio || 1;
+      const zoomRatio = currentDevicePixelRatio / initialDevicePixelRatio;
+
+      setSidebarZoom(Math.max(0.6, Math.min(1, 1 / zoomRatio)));
+    };
+
+    window.addEventListener("resize", updateSidebarZoom);
+
+    return () => {
+      window.removeEventListener("resize", updateSidebarZoom);
+    };
+  }, []);
 
   const menus = [
     { name: "Dashboard", icon: <FiGrid />, path: "/dashboard" },
@@ -21,12 +40,15 @@ function Sidebar() {
   ];
 
   return (
-    <div className="w-64 bg-white border-r border-gray-200 flex flex-col justify-between">
+    <div
+      className="w-64 shrink-0 bg-white border-r border-gray-200 flex flex-col justify-between"
+      style={{ zoom: sidebarZoom }}
+    >
       <div>
         {/* Logo */}
 
         <div className="px-8 py-8 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold">
+          <div className="w-9 h-9 shrink-0 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold">
             S
           </div>
 
@@ -47,7 +69,9 @@ function Sidebar() {
                   : "text-gray-600 hover:bg-gray-100"
               }`}
             >
-              {item.icon}
+              <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center">
+                {item.icon}
+              </span>
 
               {item.name}
             </Link>
