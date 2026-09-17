@@ -13,7 +13,8 @@ import Sidebar from "../../components/layout/Sidebar";
 import Navbar from "../../components/layout/Navbar";
 import api from "../../api/interceptors";
 
-const BACKEND_BASE = "http://localhost:3005";
+//const BACKEND_BASE = "http://localhost:3005";
+const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL;
 
 function Files() {
   const [folders, setFolders] = useState([]);
@@ -176,7 +177,7 @@ function Files() {
       setUploading(true);
       setLoading(true);
 
-      const response = await fetch(`${BACKEND_BASE}/api/files/upload`, {
+      const response = await fetch(`${BACKEND_BASE}/files/upload`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -361,15 +362,15 @@ function Files() {
     <div className="flex min-h-screen bg-[#F5F7FB]">
       <Sidebar />
 
-      <div className="flex flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <Navbar />
 
-        <main className="flex-1 p-8">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-5xl">
             {/* PAGE HEADER */}
 
             <div className="mb-6">
-              <h1 className="text-[34px] font-bold tracking-tight text-gray-900">
+              <h1 className="text-[28px] font-bold tracking-tight text-gray-900 sm:text-[34px]">
                 Files
               </h1>
 
@@ -380,14 +381,14 @@ function Files() {
 
             {/* SEARCH + ACTIONS */}
 
-            <div className="mb-6 flex items-center gap-3">
-              <div className="flex h-12 flex-1 items-center rounded-xl border border-gray-200 bg-white px-4 shadow-sm">
-                <FiSearch className="mr-3 text-gray-400" size={16} />
+            <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="flex h-12 min-w-0 flex-1 items-center rounded-xl border border-gray-200 bg-white px-4 shadow-sm">
+                <FiSearch className="mr-3 shrink-0 text-gray-400" size={16} />
 
                 <input
                   type="text"
                   placeholder="Search files and folders"
-                  className="w-full bg-transparent text-sm text-gray-700 outline-none placeholder:text-gray-400"
+                  className="w-full min-w-0 bg-transparent text-sm text-gray-700 outline-none placeholder:text-gray-400"
                   value={searchTerm}
                   onChange={handleSearch}
                 />
@@ -396,7 +397,7 @@ function Files() {
               <button
                 type="button"
                 disabled={folderLoading || uploading}
-                className="flex h-12 items-center gap-2 rounded-xl border border-gray-200 bg-white px-5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex h-12 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 onClick={handleCreateFolder}
               >
                 <FiFolderPlus size={15} />
@@ -414,7 +415,7 @@ function Files() {
               <button
                 type="button"
                 disabled={loading || uploading}
-                className="flex h-12 items-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex h-12 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 onClick={() => uploadInputRef.current?.click()}
               >
                 <FiUploadCloud size={15} />
@@ -430,7 +431,7 @@ function Files() {
                 Folders
               </h2>
 
-              <div className="flex min-h-[202px] flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-white p-5">
+              <div className="flex min-h-[170px] flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-white p-4 sm:min-h-[202px] sm:p-5">
                 {showFolderLoading ? (
                   <div className="text-sm text-gray-500">
                     Loading folders...
@@ -461,7 +462,7 @@ function Files() {
                     </button>
                   </>
                 ) : (
-                  <div className="flex flex-wrap items-center justify-center gap-2">
+                  <div className="flex w-full flex-wrap items-center justify-center gap-2">
                     <button
                       type="button"
                       className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
@@ -478,17 +479,19 @@ function Files() {
                       <button
                         type="button"
                         key={folder._id}
-                        className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
+                        className={`max-w-full rounded-xl border px-3 py-2 text-xs font-semibold ${
                           selectedFolder === folder._id
                             ? "border-blue-600 bg-blue-50 text-blue-600"
                             : "border-gray-200 bg-white text-gray-700"
                         }`}
                         onClick={() => handleFolderSelect(folder._id)}
                       >
-                        <span className="flex items-center gap-1">
-                          <FiFolderPlus size={12} />
+                        <span className="flex max-w-full items-center gap-1">
+                          <FiFolderPlus className="shrink-0" size={12} />
 
-                          {folder.name}
+                          <span className="max-w-[180px] truncate">
+                            {folder.name}
+                          </span>
                         </span>
                       </button>
                     ))}
@@ -504,13 +507,13 @@ function Files() {
                 All files
               </h2>
 
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {loading && files.length === 0 ? (
-                  <div className="col-span-4 rounded-2xl border border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-500">
+                  <div className="col-span-full rounded-2xl border border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-500">
                     Loading files...
                   </div>
                 ) : files.length === 0 ? (
-                  <div className="col-span-4 rounded-2xl border border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-500">
+                  <div className="col-span-full rounded-2xl border border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-500">
                     {searchTerm
                       ? `No files found for "${searchTerm}"`
                       : selectedFolder !== "all"
@@ -573,7 +576,7 @@ function FileCard({ file, onDownload, onDelete }) {
   }, [openMenu]);
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+    <div className="min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
       {/* PREVIEW */}
 
       <div className="relative flex h-[96px] items-center justify-center bg-[#F3F4F7]">
@@ -598,7 +601,7 @@ function FileCard({ file, onDownload, onDelete }) {
             <img
               src={imagePreviewUrl}
               alt={file.originalName || file.name || "Uploaded file"}
-              className="h-20 w-28 rounded-md object-cover shadow-sm"
+              className="h-20 w-28 max-w-[80%] rounded-md object-cover shadow-sm"
               onError={(event) => {
                 event.currentTarget.style.display = "none";
               }}
@@ -671,7 +674,7 @@ function FileCard({ file, onDownload, onDelete }) {
       {/* FILE INFORMATION */}
 
       <div className="px-3 py-3">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#EEF3FF] text-blue-600">
             {fileType === "audio" ? (
               <FiHeadphones size={13} />
@@ -690,7 +693,7 @@ function FileCard({ file, onDownload, onDelete }) {
               {file.originalName || file.name || "File"}
             </p>
 
-            <p className="mt-1 text-[10px] text-gray-500">
+            <p className="mt-1 truncate text-[10px] text-gray-500">
               {file.sizeLabel || file.size || "Unknown size"} ·{" "}
               {file.createdDate || file.date || "Unknown date"}
             </p>

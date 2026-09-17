@@ -56,26 +56,28 @@ function Register() {
   };
 
   return (
-    <div className="bg-white rounded-3xl shadow-xl p-10 w-full max-w-md">
+    <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-xl sm:p-8 md:p-10">
       {/* Heading */}
-      <h1 className="text-4xl font-bold text-gray-900">Create your account</h1>
+      <h1 className="text-3xl font-bold text-gray-900 sm:text-4xl">
+        Create your account
+      </h1>
 
-      <p className="text-gray-500 mt-2 mb-8">
+      <p className="mt-2 mb-6 text-gray-500 sm:mb-8">
         Free for teams up to 5 people. No card required.
       </p>
 
       {/* Upload Image */}
-      <div className="border border-gray-200 rounded-2xl p-4 flex items-center gap-4 mb-6">
-        <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center font-semibold text-gray-600">
+      <div className="mb-5 flex items-center gap-3 rounded-2xl border border-gray-200 p-3 sm:mb-6 sm:gap-4 sm:p-4">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gray-100 font-semibold text-gray-600 sm:h-14 sm:w-14">
           AM
         </div>
 
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <h3 className="font-medium text-gray-800">Profile image</h3>
 
-          <p className="text-sm text-gray-500 mb-2">PNG or JPG, up to 4 MB</p>
+          <p className="mb-2 text-sm text-gray-500">PNG or JPG, up to 4 MB</p>
 
-          <label className="inline-flex items-center gap-2 border border-gray-300 rounded-lg px-4 py-2 cursor-pointer hover:bg-gray-50">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 hover:bg-gray-50 sm:px-4">
             <FiUpload />
             Upload
             <input type="file" className="hidden" onChange={handleImage} />
@@ -84,9 +86,9 @@ function Register() {
       </div>
 
       {/* Full Name & Username */}
-      <div className="grid grid-cols-2 gap-4 mb-5">
+      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label className="block text-gray-700 mb-2">Full name</label>
+          <label className="mb-2 block text-gray-700">Full name</label>
 
           <input
             type="text"
@@ -94,12 +96,12 @@ function Register() {
             value={formData.name}
             onChange={handleChange}
             placeholder="Alina Meyer"
-            className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-600"
+            className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-blue-600"
           />
         </div>
 
         <div>
-          <label className="block text-gray-700 mb-2">Username</label>
+          <label className="mb-2 block text-gray-700">Username</label>
 
           <input
             type="text"
@@ -107,14 +109,14 @@ function Register() {
             value={formData.username}
             onChange={handleChange}
             placeholder="alina"
-            className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-600"
+            className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-blue-600"
           />
         </div>
       </div>
 
       {/* Email */}
       <div className="mb-5">
-        <label className="block text-gray-700 mb-2">Email</label>
+        <label className="mb-2 block text-gray-700">Email</label>
 
         <input
           type="email"
@@ -122,14 +124,14 @@ function Register() {
           value={formData.email}
           onChange={handleChange}
           placeholder="you@company.com"
-          className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:border-blue-600"
+          className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-blue-600"
         />
       </div>
 
       {/* Passwords */}
-      <div className="grid grid-cols-2 gap-4 mb-8">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:mb-8 sm:grid-cols-2">
         <div>
-          <label className="block text-gray-700 mb-2">Password</label>
+          <label className="mb-2 block text-gray-700">Password</label>
 
           <div className="relative">
             <input
@@ -138,7 +140,7 @@ function Register() {
               value={formData.password}
               onChange={handleChange}
               placeholder="••••••••"
-              className="w-full border border-gray-300 rounded-xl px-4 py-3 pr-10 outline-none focus:border-blue-600"
+              className="w-full rounded-xl border border-gray-300 px-4 py-3 pr-10 outline-none focus:border-blue-600"
             />
 
             <button
@@ -152,7 +154,7 @@ function Register() {
         </div>
 
         <div>
-          <label className="block text-gray-700 mb-2">Confirm password</label>
+          <label className="mb-2 block text-gray-700">Confirm password</label>
 
           <div className="relative">
             <input
@@ -161,7 +163,7 @@ function Register() {
               value={formData.confirmPassword}
               onChange={handleChange}
               placeholder="••••••••"
-              className="w-full border border-gray-300 rounded-xl px-4 py-3 pr-10 outline-none focus:border-blue-600"
+              className="w-full rounded-xl border border-gray-300 px-4 py-3 pr-10 outline-none focus:border-blue-600"
             />
 
             <button
@@ -178,36 +180,36 @@ function Register() {
       {/* Register Button */}
       <button
         onClick={handleRegister}
-        className="w-full bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition"
+        className="w-full rounded-xl bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700"
       >
         Create account
       </button>
 
       {/* Divider */}
-      <div className="flex items-center my-6">
-        <div className="flex-1 h-px bg-gray-300"></div>
+      <div className="my-5 flex items-center sm:my-6">
+        <div className="h-px flex-1 bg-gray-300"></div>
 
-        <span className="mx-4 text-gray-400 text-sm">or</span>
+        <span className="mx-4 text-sm text-gray-400">or</span>
 
-        <div className="flex-1 h-px bg-gray-300"></div>
+        <div className="h-px flex-1 bg-gray-300"></div>
       </div>
 
       {/* Google */}
       <button
         type="button"
-        className="w-full border border-gray-300 rounded-xl py-3 flex items-center justify-center gap-3 hover:bg-gray-50"
+        className="flex w-full items-center justify-center gap-3 rounded-xl border border-gray-300 py-3 hover:bg-gray-50"
       >
         <FcGoogle size={22} />
         Sign up with Google
       </button>
 
       {/* Bottom */}
-      <p className="text-center text-gray-500 mt-8">
+      <p className="mt-6 text-center text-gray-500 sm:mt-8">
         Already have an account?{" "}
         <button
           type="button"
           onClick={() => dispatch(showLogin())}
-          className="text-blue-600 font-semibold cursor-pointer"
+          className="cursor-pointer font-semibold text-blue-600"
         >
           Login
         </button>

@@ -137,7 +137,7 @@ function Profile() {
       <div className="flex min-w-0 flex-1 flex-col">
         <Navbar />
 
-        <main className="flex-1 overflow-y-auto px-8 py-7">
+        <main className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-7">
           <div className="mx-auto w-full max-w-[800px]">
             {/* PAGE HEADING */}
 
@@ -156,35 +156,35 @@ function Profile() {
             <section className="overflow-hidden rounded-[14px] border border-gray-200 bg-white shadow-sm">
               {/* COVER */}
 
-              <div className="h-[150px] bg-gradient-to-r from-[#f4f7fa] via-[#edf2f6] to-[#e3e9ef]" />
+              <div className="h-[120px] bg-gradient-to-r from-[#f4f7fa] via-[#edf2f6] to-[#e3e9ef] sm:h-[150px]" />
 
               {/* PROFILE INFORMATION */}
 
-              <div className="relative flex min-h-[73px] items-center justify-between px-5 pb-3 pt-3">
-                <div className="flex min-w-0 items-center gap-3">
+              <div className="relative flex min-h-[73px] flex-col items-start justify-between gap-4 px-4 pb-4 pt-3 sm:px-5 md:flex-row md:items-center md:gap-3 md:pb-3">
+                <div className="flex min-w-0 w-full items-center gap-3">
                   {/* AVATAR */}
 
-                  <div className="-mt-[67px] flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#edf3ff] text-[17px] font-semibold text-[#315eff] shadow-sm">
+                  <div className="-mt-[52px] flex h-[64px] w-[64px] shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#edf3ff] text-[17px] font-semibold text-[#315eff] shadow-sm sm:-mt-[67px] sm:h-[72px] sm:w-[72px]">
                     {firstLetter}
                   </div>
 
                   {/* USER DETAILS */}
 
                   <div className="min-w-0">
-                    <h2 className="text-[14px] font-semibold leading-tight text-gray-900">
+                    <h2 className="truncate text-[14px] font-semibold leading-tight text-gray-900">
                       {displayName}
                     </h2>
 
-                    <div className="mt-1 flex items-center gap-1 text-[9px] text-gray-500">
-                      <span>@{username}</span>
+                    <div className="mt-1 flex flex-wrap items-center gap-1 text-[9px] text-gray-500">
+                      <span className="truncate">@{username}</span>
                       <span>·</span>
                       <span>Product Designer</span>
                       <span>·</span>
                       <span>Northwind Studio</span>
                     </div>
 
-                    <div className="mt-1 flex items-center gap-1 text-[9px] text-gray-500">
-                      <span>{email}</span>
+                    <div className="mt-1 flex flex-wrap items-center gap-1 text-[9px] text-gray-500">
+                      <span className="truncate">{email}</span>
                       <span>·</span>
                       <span>Berlin, Germany</span>
                       <span>·</span>
@@ -195,11 +195,11 @@ function Profile() {
 
                 {/* ACTIONS */}
 
-                <div className="flex shrink-0 items-center gap-1.5">
+                <div className="flex w-full shrink-0 items-center gap-1.5 sm:w-auto">
                   <button
                     type="button"
                     onClick={() => navigate("/settings")}
-                    className="flex h-[27px] items-center gap-1 rounded-[8px] border border-gray-300 bg-white px-3 text-[9px] font-medium text-gray-700 transition hover:bg-gray-50"
+                    className="flex h-[27px] flex-1 items-center justify-center gap-1 rounded-[8px] border border-gray-300 bg-white px-2 text-[9px] font-medium text-gray-700 transition hover:bg-gray-50 sm:flex-none sm:px-3"
                   >
                     <FiLock size={10} />
                     Change Password
@@ -208,7 +208,7 @@ function Profile() {
                   <button
                     type="button"
                     onClick={() => navigate("/settings")}
-                    className="flex h-[27px] items-center gap-1 rounded-[8px] bg-[#315eff] px-3 text-[9px] font-semibold text-white transition hover:bg-[#2853e6]"
+                    className="flex h-[27px] flex-1 items-center justify-center gap-1 rounded-[8px] bg-[#315eff] px-2 text-[9px] font-semibold text-white transition hover:bg-[#2853e6] sm:flex-none sm:px-3"
                   >
                     <FiEdit2 size={10} />
                     Edit Profile
@@ -219,7 +219,7 @@ function Profile() {
 
             {/* MAIN CONTENT */}
 
-            <section className="mt-4 grid grid-cols-[1fr_250px] gap-4">
+            <section className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_250px]">
               {/* LEFT COLUMN */}
 
               <div className="min-w-0 space-y-4">
@@ -269,7 +269,7 @@ function Profile() {
                     {uploads.map((file) => (
                       <div
                         key={file.name}
-                        className="flex items-center justify-between rounded-[9px] bg-[#f8fafc] px-2.5 py-2"
+                        className="flex min-w-0 items-center justify-between gap-2 rounded-[9px] bg-[#f8fafc] px-2.5 py-2"
                       >
                         <div className="flex min-w-0 items-center gap-2.5">
                           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500">
@@ -281,13 +281,13 @@ function Profile() {
                               {file.name}
                             </p>
 
-                            <p className="mt-0.5 text-[7px] text-gray-500">
+                            <p className="mt-0.5 truncate text-[7px] text-gray-500">
                               {file.size}
                             </p>
                           </div>
                         </div>
 
-                        <span className="ml-3 shrink-0 text-[8px] font-medium text-gray-600">
+                        <span className="ml-2 max-w-[90px] shrink-0 truncate text-right text-[8px] font-medium text-gray-600 sm:max-w-none">
                           {file.owner}
                         </span>
                       </div>
@@ -306,7 +306,7 @@ function Profile() {
                     {sharedFiles.map((file) => (
                       <div
                         key={file.name}
-                        className="flex items-center justify-between rounded-[9px] bg-[#f8fafc] px-2.5 py-2"
+                        className="flex min-w-0 items-center justify-between gap-2 rounded-[9px] bg-[#f8fafc] px-2.5 py-2"
                       >
                         <div className="flex min-w-0 items-center gap-2.5">
                           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500">
@@ -318,13 +318,13 @@ function Profile() {
                               {file.name}
                             </p>
 
-                            <p className="mt-0.5 text-[7px] text-gray-500">
+                            <p className="mt-0.5 truncate text-[7px] text-gray-500">
                               {file.size}
                             </p>
                           </div>
                         </div>
 
-                        <span className="ml-3 shrink-0 text-[8px] font-medium text-gray-600">
+                        <span className="ml-2 max-w-[90px] shrink-0 truncate text-right text-[8px] font-medium text-gray-600 sm:max-w-none">
                           {file.owner}
                         </span>
                       </div>
@@ -335,7 +335,7 @@ function Profile() {
 
               {/* RIGHT COLUMN */}
 
-              <aside className="space-y-4">
+              <aside className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:block lg:space-y-4">
                 {/* TOTAL UPLOADS */}
 
                 <section className="rounded-[14px] border border-gray-200 bg-white px-4 py-4 shadow-sm">

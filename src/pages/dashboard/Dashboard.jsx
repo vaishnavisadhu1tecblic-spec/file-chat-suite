@@ -135,21 +135,21 @@ function Dashboard() {
     <div className="flex min-h-screen bg-[#F5F7FB]">
       <Sidebar />
 
-      <div className="flex-1 flex flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <Navbar />
 
-        <div className="p-8">
+        <main className="min-w-0 flex-1 p-4 sm:p-6 md:p-8">
           {/* =====================================================
               HEADER
           ===================================================== */}
 
-          <div className="flex justify-between items-center mb-8">
-            <div>
-              <h1 className="text-[34px] font-bold tracking-tight">
+          <div className="mb-6 flex items-center justify-between sm:mb-8">
+            <div className="min-w-0">
+              <h1 className="text-[28px] font-bold tracking-tight sm:text-[32px] md:text-[34px]">
                 Dashboard
               </h1>
 
-              <p className="text-gray-500 mt-2">
+              <p className="mt-2 text-sm text-gray-500">
                 Here's what's moving in your workspace today.
               </p>
             </div>
@@ -159,7 +159,7 @@ function Dashboard() {
               CARDS
           ===================================================== */}
 
-          <div className="grid grid-cols-4 gap-8 mb-8">
+          <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:mb-8 md:grid-cols-2 md:gap-6 xl:grid-cols-4 xl:gap-8">
             <Card
               title="Files Uploaded"
               value={filesUploaded.toLocaleString()}
@@ -193,17 +193,17 @@ function Dashboard() {
               BOTTOM
           ===================================================== */}
 
-          <div className="grid grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:gap-8">
             {/* =================================================
                 RECENT UPLOADS
             ================================================= */}
 
-            <div className="bg-white rounded-2xl p-6 shadow-[0_2px_12px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] transition">
-              <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100">
+            <div className="min-w-0 overflow-hidden rounded-2xl bg-white shadow-[0_2px_12px_rgba(0,0,0,0.04)] transition hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
+              <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-6 sm:py-5">
                 <h2 className="font-semibold text-lg">Recent Uploads</h2>
 
                 <button
-                  className="text-sm text-gray-700 flex items-center gap-1"
+                  className="shrink-0 text-sm text-gray-700"
                   onClick={() => navigate("/files")}
                 >
                   View all ↗
@@ -211,9 +211,9 @@ function Dashboard() {
               </div>
 
               {recentUploads.length === 0 ? (
-                <div className="px-6 py-10 text-center">
-                  <div className="flex justify-center mb-3">
-                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+                <div className="px-4 py-10 text-center sm:px-6">
+                  <div className="mb-3 flex justify-center">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100">
                       <FiFileText size={18} className="text-gray-400" />
                     </div>
                   </div>
@@ -222,7 +222,7 @@ function Dashboard() {
                     No uploads yet
                   </p>
 
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="mt-1 text-xs text-gray-400">
                     Uploaded files will appear here.
                   </p>
                 </div>
@@ -230,16 +230,16 @@ function Dashboard() {
                 recentUploads.map((file, index) => (
                   <div
                     key={file._id || index}
-                    className="flex justify-between items-center px-6 py-4 border-b border-gray-100 last:border-none"
+                    className="flex min-w-0 items-center justify-between gap-3 border-b border-gray-100 px-4 py-4 last:border-none sm:px-6"
                   >
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                    <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100">
                         {getFileIcon(file)}
                       </div>
 
                       <div className="min-w-0">
                         <h3
-                          className="font-medium text-[15px] truncate max-w-[300px]"
+                          className="max-w-[180px] truncate text-[15px] font-medium sm:max-w-[300px]"
                           title={
                             file.originalName || file.name || "Unnamed file"
                           }
@@ -253,7 +253,7 @@ function Dashboard() {
                       </div>
                     </div>
 
-                    <span className="text-sm text-gray-400 shrink-0 ml-3">
+                    <span className="shrink-0 text-right text-xs text-gray-400 sm:text-sm">
                       {file.createdDate ||
                         (file.createdAt
                           ? new Date(file.createdAt).toLocaleDateString(
@@ -275,12 +275,12 @@ function Dashboard() {
                 RECENT CHATS
             ================================================= */}
 
-            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-              <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100">
+            <div className="min-w-0 overflow-hidden rounded-2xl bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-6 sm:py-5">
                 <h2 className="font-semibold text-lg">Recent Chats</h2>
 
                 <button
-                  className="text-sm text-gray-700"
+                  className="shrink-0 text-sm text-gray-700"
                   onClick={() => navigate("/chat")}
                 >
                   Open ↗
@@ -290,7 +290,7 @@ function Dashboard() {
               <RecentChats />
             </div>
           </div>
-        </div>
+        </main>
       </div>
     </div>
   );
@@ -302,17 +302,17 @@ function Dashboard() {
 
 function Card({ title, value, subtitle, icon }) {
   return (
-    <div className="bg-white rounded-2xl p-6 shadow-sm hover:shadow-md transition-all duration-300">
-      <div className="flex justify-between">
-        <div>
+    <div className="min-w-0 rounded-2xl bg-white p-5 shadow-sm transition-all duration-300 hover:shadow-md sm:p-6">
+      <div className="flex justify-between gap-4">
+        <div className="min-w-0">
           <p className="text-sm text-gray-500">{title}</p>
 
-          <h2 className="text-3xl font-bold mt-2">{value}</h2>
+          <h2 className="mt-2 truncate text-3xl font-bold">{value}</h2>
 
-          <p className="text-sm text-gray-400 mt-3">{subtitle}</p>
+          <p className="mt-3 text-sm text-gray-400">{subtitle}</p>
         </div>
 
-        <div className="w-10 h-10 rounded-xl bg-[#EEF4FF] flex items-center justify-center text-blue-600 text-xl">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EEF4FF] text-xl text-blue-600">
           {icon}
         </div>
       </div>
@@ -368,27 +368,29 @@ function RecentChats() {
       {chats.map((chat, index) => (
         <div
           key={index}
-          className="flex justify-between items-center px-6 py-4 border-b border-gray-100 last:border-none"
+          className="flex min-w-0 items-center justify-between gap-3 border-b border-gray-100 px-4 py-4 last:border-none sm:px-6"
         >
-          <div className="flex items-center gap-4">
-            <div className="relative">
-              <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-xs font-semibold text-gray-600">
+          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+            <div className="relative shrink-0">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600">
                 {chat.avatar}
               </div>
 
               {chat.online && (
-                <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>
+                <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-green-500"></span>
               )}
             </div>
 
-            <div>
-              <h3 className="font-medium text-[15px]">{chat.name}</h3>
+            <div className="min-w-0">
+              <h3 className="truncate text-[15px] font-medium">{chat.name}</h3>
 
-              <p className="text-sm text-gray-500">{chat.message}</p>
+              <p className="truncate text-sm text-gray-500">{chat.message}</p>
             </div>
           </div>
 
-          <span className="text-sm text-gray-400">{chat.time}</span>
+          <span className="shrink-0 text-xs text-gray-400 sm:text-sm">
+            {chat.time}
+          </span>
         </div>
       ))}
     </>

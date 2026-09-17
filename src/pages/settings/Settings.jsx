@@ -120,10 +120,10 @@ function Settings() {
     <div className="flex min-h-screen bg-[#F5F7FB]">
       <Sidebar />
 
-      <div className="flex flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <Navbar />
 
-        <main className="flex-1 px-8 py-6">
+        <main className="flex-1 px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
           <div className="mx-auto w-full max-w-[640px]">
             {/* Page Header */}
 
@@ -144,7 +144,7 @@ function Settings() {
                 Account
               </h2>
 
-              <div className="grid grid-cols-2 gap-x-4 gap-y-4">
+              <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
                 {/* Full Name */}
 
                 <div>
@@ -187,7 +187,7 @@ function Settings() {
 
                 {/* Email */}
 
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <label
                     htmlFor="email"
                     className="mb-1.5 block text-[10px] font-medium text-gray-900"
@@ -208,7 +208,7 @@ function Settings() {
 
               {/* Save Changes */}
 
-              <div className="mt-4 flex items-center justify-end gap-3">
+              <div className="mt-4 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-end">
                 {saved && (
                   <span className="text-[10px] font-medium text-green-600">
                     Changes saved
@@ -216,7 +216,7 @@ function Settings() {
                 )}
 
                 {saveError && (
-                  <span className="text-[10px] font-medium text-red-600">
+                  <span className="break-words text-[10px] font-medium text-red-600 sm:max-w-[300px] sm:text-right">
                     {saveError}
                   </span>
                 )}
@@ -225,7 +225,7 @@ function Settings() {
                   type="button"
                   onClick={handleSave}
                   disabled={isSaving}
-                  className="rounded-[10px] bg-[#315EFF] px-4 py-2 text-[10px] font-semibold text-white hover:bg-[#2852e8]"
+                  className="w-full rounded-[10px] bg-[#315EFF] px-4 py-2 text-[10px] font-semibold text-white hover:bg-[#2852e8] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 >
                   {isSaving ? "Saving..." : "Save changes"}
                 </button>
@@ -241,13 +241,13 @@ function Settings() {
 
               {/* Email Notifications */}
 
-              <div className="flex items-center justify-between border-b border-gray-200 py-2.5">
-                <div>
+              <div className="flex min-w-0 items-center justify-between gap-4 border-b border-gray-200 py-2.5">
+                <div className="min-w-0">
                   <p className="text-[10px] font-medium text-gray-900">
                     Email notifications
                   </p>
 
-                  <p className="mt-0.5 text-[9px] text-gray-500">
+                  <p className="mt-0.5 text-[9px] leading-4 text-gray-500">
                     Digest of mentions and file activity every morning.
                   </p>
                 </div>
@@ -261,13 +261,13 @@ function Settings() {
 
               {/* Desktop Notifications */}
 
-              <div className="flex items-center justify-between border-b border-gray-200 py-2.5">
-                <div>
+              <div className="flex min-w-0 items-center justify-between gap-4 border-b border-gray-200 py-2.5">
+                <div className="min-w-0">
                   <p className="text-[10px] font-medium text-gray-900">
                     Desktop notifications
                   </p>
 
-                  <p className="mt-0.5 text-[9px] text-gray-500">
+                  <p className="mt-0.5 text-[9px] leading-4 text-gray-500">
                     Get notified when someone messages you directly.
                   </p>
                 </div>
@@ -281,13 +281,13 @@ function Settings() {
 
               {/* Shared Link Expiry */}
 
-              <div className="flex items-center justify-between py-2.5">
-                <div>
+              <div className="flex min-w-0 items-center justify-between gap-4 py-2.5">
+                <div className="min-w-0">
                   <p className="text-[10px] font-medium text-gray-900">
                     Shared link expiry
                   </p>
 
-                  <p className="mt-0.5 text-[9px] text-gray-500">
+                  <p className="mt-0.5 text-[9px] leading-4 text-gray-500">
                     Automatically expire shared links after 30 days.
                   </p>
                 </div>
