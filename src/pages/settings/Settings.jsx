@@ -18,6 +18,7 @@ const DEFAULT_PREFERENCES = {
 function Settings() {
   const [formData, setFormData] = useState(DEFAULT_USER);
   const [preferences, setPreferences] = useState(DEFAULT_PREFERENCES);
+  const [theme, setTheme] = useState(localStorage.getItem("theme") || "light");
   const [saved, setSaved] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -30,6 +31,8 @@ function Settings() {
         localStorage.getItem("preferences") || "{}",
       );
 
+      const storedTheme = localStorage.getItem("theme") || "light";
+
       setFormData({
         name: storedUser?.name || storedUser?.username || DEFAULT_USER.name,
         username: storedUser?.username || DEFAULT_USER.username,
@@ -40,10 +43,18 @@ function Settings() {
         ...DEFAULT_PREFERENCES,
         ...storedPreferences,
       });
+
+      setTheme(storedTheme);
+      document.documentElement.dataset.theme = storedTheme;
     } catch (error) {
       console.error("Load settings error:", error);
     }
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("theme", theme);
+  }, [theme]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -63,6 +74,10 @@ function Settings() {
       ...prev,
       [name]: !prev[name],
     }));
+  };
+
+  const handleThemeToggle = () => {
+    setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"));
   };
 
   const handleSave = async () => {
@@ -97,6 +112,9 @@ function Settings() {
       );
 
       localStorage.setItem("preferences", JSON.stringify(preferences));
+      localStorage.setItem("theme", theme);
+
+      document.documentElement.dataset.theme = theme;
 
       window.dispatchEvent(new Event("userUpdated"));
 
@@ -107,6 +125,7 @@ function Settings() {
       }, 2500);
     } catch (error) {
       console.error("Save settings error:", error);
+
       setSaveError(
         error.response?.data?.message ||
           "Unable to save your account settings. Please try again.",
@@ -281,7 +300,7 @@ function Settings() {
 
               {/* Shared Link Expiry */}
 
-              <div className="flex min-w-0 items-center justify-between gap-4 py-2.5">
+              <div className="flex min-w-0 items-center justify-between gap-4 border-b border-gray-200 py-2.5">
                 <div className="min-w-0">
                   <p className="text-[10px] font-medium text-gray-900">
                     Shared link expiry
@@ -296,6 +315,26 @@ function Settings() {
                   enabled={preferences.sharedLinkExpiry}
                   onClick={() => handleToggle("sharedLinkExpiry")}
                   label="Toggle shared link expiry"
+                />
+              </div>
+
+              {/* Dark Mode */}
+
+              <div className="flex min-w-0 items-center justify-between gap-4 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-medium text-gray-900">
+                    Dark mode
+                  </p>
+
+                  <p className="mt-0.5 text-[9px] leading-4 text-gray-500">
+                    Use the dark black and purple theme.
+                  </p>
+                </div>
+
+                <Toggle
+                  enabled={theme === "dark"}
+                  onClick={handleThemeToggle}
+                  label="Toggle dark mode"
                 />
               </div>
             </section>

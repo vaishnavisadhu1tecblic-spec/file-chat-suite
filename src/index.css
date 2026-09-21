@@ -1,1 +1,368 @@
 @import "tailwindcss";
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f5f7fb;
+  color: #111827;
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease;
+}
+
+.container {
+  padding: 20px;
+}
+
+/* =========================================================
+   DESIGN LOGO
+   ========================================================= */
+
+#designLogo {
+  width: 42px;
+  height: 42px;
+  background: #5b5ce2;
+  border: 2px solid #5b5ce2;
+  border-radius: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+#designLogo:hover {
+  background-color: #5b5ce2;
+  border-color: #5b5ce2;
+  transform: scale(1.05);
+}
+
+#designLogo svg,
+#designLogo img {
+  width: 22px;
+  height: 22px;
+}
+
+/* =========================================================
+   DARK THEME
+   Black + Purple / Pink
+   ========================================================= */
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/* =========================================================
+   GLOBAL
+   ========================================================= */
+
+html[data-theme="dark"] body {
+  background: #09090f;
+  color: #f5f3ff;
+}
+
+/* =========================================================
+   MAIN BACKGROUNDS
+   ========================================================= */
+
+html[data-theme="dark"] .bg-white {
+  background-color: #11111a !important;
+}
+
+html[data-theme="dark"] .bg-gray-50 {
+  background-color: #0f0f17 !important;
+}
+
+html[data-theme="dark"] .bg-gray-100 {
+  background-color: #181522 !important;
+}
+
+html[data-theme="dark"] .bg-gray-200 {
+  background-color: #292238 !important;
+}
+
+html[data-theme="dark"] .bg-\[\#F5F7FB\] {
+  background-color: #09090f !important;
+}
+
+html[data-theme="dark"] .bg-\[\#F7F8FC\] {
+  background-color: #0c0b12 !important;
+}
+
+/* =========================================================
+   CUSTOM LIGHT BACKGROUNDS USED IN PROFILE / FILES / CHAT
+   ========================================================= */
+
+html[data-theme="dark"] .bg-\[\#f8fafc\] {
+  background-color: #17141f !important;
+}
+
+html[data-theme="dark"] .bg-\[\#f1f5f9\] {
+  background-color: #211b2c !important;
+}
+
+html[data-theme="dark"] .bg-\[\#F3F4F7\] {
+  background-color: #17141f !important;
+}
+
+html[data-theme="dark"] .bg-\[\#edf3ff\] {
+  background-color: #21183a !important;
+}
+
+html[data-theme="dark"] .bg-\[\#EEF3FF\] {
+  background-color: #21183a !important;
+}
+
+html[data-theme="dark"] .bg-\[\#edf2f6\] {
+  background-color: #181722 !important;
+}
+
+html[data-theme="dark"] .bg-\[\#e3e9ef\] {
+  background-color: #1b1825 !important;
+}
+
+html[data-theme="dark"] .bg-\[\#f4f7fa\] {
+  background-color: #181722 !important;
+}
+
+/* =========================================================
+   PROFILE HEADER GRADIENT
+   ========================================================= */
+
+html[data-theme="dark"]
+  .bg-gradient-to-r.from-\[\#f4f7fa\].via-\[\#edf2f6\].to-\[\#e3e9ef\] {
+  background-image: linear-gradient(
+    to right,
+    #17131f,
+    #1d1728,
+    #241a31
+  ) !important;
+}
+
+/* =========================================================
+   TEXT
+   ========================================================= */
+
+html[data-theme="dark"] .text-gray-900 {
+  color: #f5f3ff !important;
+}
+
+html[data-theme="dark"] .text-gray-800 {
+  color: #ede9fe !important;
+}
+
+html[data-theme="dark"] .text-gray-700 {
+  color: #ddd6fe !important;
+}
+
+html[data-theme="dark"] .text-gray-600 {
+  color: #c4b5fd !important;
+}
+
+html[data-theme="dark"] .text-gray-500 {
+  color: #a8a1b5 !important;
+}
+
+html[data-theme="dark"] .text-gray-400 {
+  color: #8b8498 !important;
+}
+
+/* =========================================================
+   BORDERS
+   ========================================================= */
+
+html[data-theme="dark"] .border-gray-200 {
+  border-color: #292238 !important;
+}
+
+html[data-theme="dark"] .border-gray-300 {
+  border-color: #3a304b !important;
+}
+
+html[data-theme="dark"] .border-gray-100 {
+  border-color: #211c2c !important;
+}
+
+/* =========================================================
+   INPUTS
+   ========================================================= */
+
+html[data-theme="dark"] input,
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] select {
+  background-color: #14121d !important;
+  color: #f5f3ff !important;
+  border-color: #342a47 !important;
+}
+
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder {
+  color: #81798f !important;
+}
+
+/* =========================================================
+   COMMON HOVERS
+   ========================================================= */
+
+html[data-theme="dark"] .hover\:bg-gray-50:hover {
+  background-color: #181522 !important;
+}
+
+html[data-theme="dark"] .hover\:bg-gray-100:hover {
+  background-color: #211c2c !important;
+}
+
+html[data-theme="dark"] .hover\:bg-gray-200:hover {
+  background-color: #2b2338 !important;
+}
+
+/* Profile / Files custom hover */
+html[data-theme="dark"] .hover\:bg-\[\#f1f5f9\]:hover {
+  background-color: #241d31 !important;
+}
+
+/* =========================================================
+   CHAT SELECTED ROW
+   ========================================================= */
+
+html[data-theme="dark"] .bg-blue-50 {
+  background-color: #24183a !important;
+}
+
+html[data-theme="dark"] .border-l-blue-600 {
+  border-left-color: #8b5cf6 !important;
+}
+
+html[data-theme="dark"] .hover\:bg-gray-50:hover {
+  background-color: #181522 !important;
+}
+
+/* =========================================================
+   BLUE PRIMARY BUTTONS
+   ========================================================= */
+
+html[data-theme="dark"] .bg-blue-600 {
+  background-color: #8b5cf6 !important;
+}
+
+html[data-theme="dark"] .hover\:bg-blue-700:hover {
+  background-color: #ec4899 !important;
+}
+
+/* =========================================================
+   BLUE TEXT
+   ========================================================= */
+
+html[data-theme="dark"] .text-blue-600 {
+  color: #a78bfa !important;
+}
+
+html[data-theme="dark"] .text-blue-500 {
+  color: #c084fc !important;
+}
+
+html[data-theme="dark"] .text-blue-700 {
+  color: #c4b5fd !important;
+}
+
+html[data-theme="dark"] .border-blue-600 {
+  border-color: #8b5cf6 !important;
+}
+
+/* =========================================================
+   PROFILE / FILE ICON BACKGROUNDS
+   ========================================================= */
+
+html[data-theme="dark"] .bg-\[\#edf3ff\].text-\[\#315eff\] {
+  background-color: #21183a !important;
+  color: #a78bfa !important;
+}
+
+html[data-theme="dark"] .bg-\[\#EEF3FF\].text-blue-600 {
+  background-color: #21183a !important;
+  color: #a78bfa !important;
+}
+
+/* =========================================================
+   FILE PREVIEW ELEMENTS
+   ========================================================= */
+
+html[data-theme="dark"] .bg-gray-300 {
+  background-color: #3a304b !important;
+}
+
+html[data-theme="dark"] .bg-gray-400 {
+  background-color: #4a3b5e !important;
+}
+
+/* White document/file preview pieces */
+html[data-theme="dark"] .shadow-sm {
+  --tw-shadow-color: rgba(0, 0, 0, 0.25);
+}
+
+/* =========================================================
+   CHAT STATUS TICKS
+   ========================================================= */
+
+html[data-theme="dark"] .text-\[\#38BDF8\] {
+  color: #38bdf8 !important;
+}
+
+/* =========================================================
+   DARK RED ERROR STATES
+   ========================================================= */
+
+html[data-theme="dark"] .bg-red-50 {
+  background-color: #2a141b !important;
+}
+
+html[data-theme="dark"] .border-red-200 {
+  border-color: #5c2633 !important;
+}
+
+html[data-theme="dark"] .text-red-600 {
+  color: #fb7185 !important;
+}
+
+html[data-theme="dark"] .hover\:bg-red-50:hover {
+  background-color: #341720 !important;
+}
+
+/* =========================================================
+   DARK SCROLLBAR
+   ========================================================= */
+
+html[data-theme="dark"] ::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: #0f0d16;
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #3b2d50;
+  border-radius: 10px;
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #6d4aa2;
+}
+
+/* =========================================================
+   DESIGN LOGO - DARK MODE
+   ========================================================= */
+
+html[data-theme="dark"] #designLogo {
+  background: #8b5cf6;
+  border-color: #a855f7;
+  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.25);
+}
+
+html[data-theme="dark"] #designLogo:hover {
+  background: #ec4899;
+  border-color: #ec4899;
+}

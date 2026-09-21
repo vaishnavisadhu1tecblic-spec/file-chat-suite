@@ -1,77 +1,210 @@
+@import "tailwindcss";
+
 body {
   margin: 0;
   font-family: Arial, sans-serif;
+  background: #f5f7fb;
+  color: #111827;
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease;
 }
 
 .container {
   padding: 20px;
 }
-#designLogo {
-  width: 50px;
-  height: 50px;
 
-  border: 2px solid #5b5ce2;
-  border-radius: 80px; /* Rounded corners */
-
-  background-color: #f3f4ff; /* Light background */
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  padding: 8px;
-
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-#designLogo:hover {
-  background-color: #5b5ce2;
-  border-color: #5b5ce2;
-  transform: scale(1.05);
-}
-
-#designLogo {
-  width: 50px;
-  height: 50px;
-
-  border: 2px solid #5b5ce2;
-  border-radius: 12px; /* Rounded corners */
-
-  background-color: #f3f4ff; /* Light background */
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  padding: 8px;
-
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-#designLogo:hover {
-  background-color: #5b5ce2;
-  border-color: #5b5ce2;
-  transform: scale(1.05);
-}
+/* =========================================================
+   DESIGN LOGO
+   ========================================================= */
 
 #designLogo {
   width: 42px;
   height: 42px;
   background: #5b5ce2;
+  border: 2px solid #5b5ce2;
   border-radius: 100px;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 8px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+#designLogo:hover {
+  background-color: #5b5ce2;
+  border-color: #5b5ce2;
+  transform: scale(1.05);
 }
 
 #designLogo svg,
 #designLogo img {
   width: 22px;
   height: 22px;
+}
+
+/* =========================================================
+   DARK THEME
+   Black + Purple / Pink
+   ========================================================= */
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+html[data-theme="dark"] body {
+  background: #09090f;
+  color: #f5f3ff;
+}
+
+/* Main light backgrounds */
+html[data-theme="dark"] .bg-white {
+  background-color: #11111a !important;
+}
+
+html[data-theme="dark"] .bg-gray-50 {
+  background-color: #0f0f17 !important;
+}
+
+html[data-theme="dark"] .bg-gray-100 {
+  background-color: #181522 !important;
+}
+
+html[data-theme="dark"] .bg-gray-200 {
+  background-color: #292238 !important;
+}
+
+html[data-theme="dark"] .bg-\[\#F5F7FB\] {
+  background-color: #09090f !important;
+}
+
+html[data-theme="dark"] .bg-\[\#F7F8FC\] {
+  background-color: #0c0b12 !important;
+}
+
+/* Text */
+html[data-theme="dark"] .text-gray-900 {
+  color: #f5f3ff !important;
+}
+
+html[data-theme="dark"] .text-gray-800 {
+  color: #ede9fe !important;
+}
+
+html[data-theme="dark"] .text-gray-700 {
+  color: #ddd6fe !important;
+}
+
+html[data-theme="dark"] .text-gray-600 {
+  color: #c4b5fd !important;
+}
+
+html[data-theme="dark"] .text-gray-500 {
+  color: #a8a1b5 !important;
+}
+
+html[data-theme="dark"] .text-gray-400 {
+  color: #8b8498 !important;
+}
+
+/* Borders */
+html[data-theme="dark"] .border-gray-200 {
+  border-color: #292238 !important;
+}
+
+html[data-theme="dark"] .border-gray-300 {
+  border-color: #3a304b !important;
+}
+
+/* Inputs */
+html[data-theme="dark"] input,
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] select {
+  background-color: #14121d !important;
+  color: #f5f3ff !important;
+  border-color: #342a47 !important;
+}
+
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder {
+  color: #81798f !important;
+}
+
+/* Common hover backgrounds */
+html[data-theme="dark"] .hover\:bg-gray-50:hover {
+  background-color: #181522 !important;
+}
+
+html[data-theme="dark"] .hover\:bg-gray-100:hover {
+  background-color: #211c2c !important;
+}
+
+html[data-theme="dark"] .hover\:bg-gray-200:hover {
+  background-color: #2b2338 !important;
+}
+
+/* Blue primary buttons become purple/pink in dark mode */
+html[data-theme="dark"] .bg-blue-600 {
+  background-color: #8b5cf6 !important;
+}
+
+html[data-theme="dark"] .hover\:bg-blue-700:hover {
+  background-color: #ec4899 !important;
+}
+
+/* Blue text */
+html[data-theme="dark"] .text-blue-600 {
+  color: #a78bfa !important;
+}
+
+html[data-theme="dark"] .text-blue-500 {
+  color: #c084fc !important;
+}
+
+/* =========================================================
+   CHAT STATUS TICKS
+   Keep WhatsApp-style blue read tick visible
+   ========================================================= */
+
+html[data-theme="dark"] .text-\[\#38BDF8\] {
+  color: #38bdf8 !important;
+}
+
+/* =========================================================
+   DARK SCROLLBAR
+   ========================================================= */
+
+html[data-theme="dark"] ::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: #0f0d16;
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #3b2d50;
+  border-radius: 10px;
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #6d4aa2;
+}
+
+/* =========================================================
+   DESIGN LOGO - DARK MODE
+   ========================================================= */
+
+html[data-theme="dark"] #designLogo {
+  background: #8b5cf6;
+  border-color: #a855f7;
+  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.25);
+}
+
+html[data-theme="dark"] #designLogo:hover {
+  background: #ec4899;
+  border-color: #ec4899;
 }

@@ -7,6 +7,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
 
   server: {
-    allowedHosts: ["dns-physical-gmc-temporary.trycloudflare.com"],
+    host: "0.0.0.0",
+    allowedHosts: ["reviews-scene-alfred-temporary.trycloudflare.com"],
   },
 });

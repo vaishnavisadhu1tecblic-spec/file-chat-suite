@@ -21,97 +21,34 @@ function Dashboard() {
   const [filesUploaded, setFilesUploaded] = useState(0);
   const [messages, setMessages] = useState(0);
   const [storageUsed, setStorageUsed] = useState("0 KB");
+  const [sharedFiles, setSharedFiles] = useState(0);
   const [recentUploads, setRecentUploads] = useState([]);
-
-  // =====================================================
-  // STORAGE FORMAT
-  // =====================================================
-
-  const formatStorage = useCallback((bytes) => {
-    if (!bytes || bytes <= 0) {
-      return "0 KB";
-    }
-
-    const kb = bytes / 1024;
-
-    if (kb < 1024) {
-      return `${Math.round(kb * 10) / 10} KB`;
-    }
-
-    const mb = kb / 1024;
-
-    if (mb < 1024) {
-      return `${Math.round(mb * 10) / 10} MB`;
-    }
-
-    const gb = mb / 1024;
-
-    return `${Math.round(gb * 10) / 10} GB`;
-  }, []);
-
-  // =====================================================
-  // FILE STATS
-  // =====================================================
-
-  const loadFileStats = useCallback(async () => {
-    try {
-      const response = await api.get("/files/stats");
-
-      const stats = response.data?.stats || {};
-
-      setFilesUploaded(stats.filesUploaded || 0);
-
-      setStorageUsed(formatStorage(stats.totalBytes || 0));
-
-      setRecentUploads(stats.recentUploads || []);
-    } catch (error) {
-      console.error("Dashboard file stats error:", error);
-
-      console.error(
-        "GET /api/files/stats failed:",
-        error?.response?.data || error?.message || error,
-      );
-    }
-  }, [formatStorage]);
-
-  // =====================================================
-  // MESSAGE COUNT
-  // =====================================================
-
-  const loadMessageCount = useCallback(async () => {
-    try {
-      const response = await api.get("/messages/count");
-
-      setMessages(response.data?.count || 0);
-    } catch (error) {
-      console.error("Dashboard message count error:", error);
-
-      console.error(
-        "GET /api/messages/count failed:",
-        error?.response?.data || error?.message || error,
-      );
-    }
-  }, []);
-
-  // =====================================================
-  // LOAD DASHBOARD DATA
-  // =====================================================
+  const [recentChats, setRecentChats] = useState([]);
 
   const loadDashboardData = useCallback(async () => {
-    await Promise.all([loadFileStats(), loadMessageCount()]);
-  }, [loadFileStats, loadMessageCount]);
+    try {
+      const response = await api.get("/dashboard");
 
-  // =====================================================
-  // INITIAL LOAD
-  // =====================================================
+      const dashboard = response.data?.dashboard || {};
+
+      setFilesUploaded(dashboard.filesUploaded || 0);
+      setMessages(dashboard.messages || 0);
+      setStorageUsed(dashboard.storageUsed || "0 KB");
+      setSharedFiles(dashboard.sharedFiles || 0);
+      setRecentUploads(dashboard.recentUploads || []);
+      setRecentChats(dashboard.recentChats || []);
+    } catch (error) {
+      console.error("Dashboard data error:", error);
+      console.error(
+        "GET /api/dashboard failed:",
+        error?.response?.data || error?.message || error,
+      );
+    }
+  }, []);
 
   useEffect(() => {
     loadDashboardData();
   }, [loadDashboardData]);
-
-  // =====================================================
-  // FILE ICON
-  // =====================================================
 
   const getFileIcon = (file) => {
     const type = file.type || "document";
@@ -131,6 +68,57 @@ function Dashboard() {
     return <FiFileText size={18} className="text-gray-500" />;
   };
 
+  const getChatAvatar = (chat) => {
+    if (chat.avatar) {
+      return chat.avatar;
+    }
+
+    const name = chat.name || "User";
+
+    return name
+      .split(" ")
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+  };
+
+  const formatChatTime = (date) => {
+    if (!date) {
+      return "";
+    }
+
+    const messageDate = new Date(date);
+
+    if (Number.isNaN(messageDate.getTime())) {
+      return "";
+    }
+
+    const now = new Date();
+
+    const isToday = messageDate.toDateString() === now.toDateString();
+
+    if (isToday) {
+      return messageDate.toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    }
+
+    const yesterday = new Date(now);
+
+    yesterday.setDate(now.getDate() - 1);
+
+    if (messageDate.toDateString() === yesterday.toDateString()) {
+      return "Yesterday";
+    }
+
+    return messageDate.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+  };
+
   return (
     <div className="flex min-h-screen bg-[#F5F7FB]">
       <Sidebar />
@@ -139,10 +127,6 @@ function Dashboard() {
         <Navbar />
 
         <main className="min-w-0 flex-1 p-4 sm:p-6 md:p-8">
-          {/* =====================================================
-              HEADER
-          ===================================================== */}
-
           <div className="mb-6 flex items-center justify-between sm:mb-8">
             <div className="min-w-0">
               <h1 className="text-[28px] font-bold tracking-tight sm:text-[32px] md:text-[34px]">
@@ -156,7 +140,7 @@ function Dashboard() {
           </div>
 
           {/* =====================================================
-              CARDS
+              STATS
           ===================================================== */}
 
           <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:mb-8 md:grid-cols-2 md:gap-6 xl:grid-cols-4 xl:gap-8">
@@ -183,20 +167,20 @@ function Dashboard() {
 
             <Card
               title="Shared Files"
-              value="0"
-              subtitle="Sharing not configured"
+              value={sharedFiles.toLocaleString()}
+              subtitle="Files shared with you"
               icon={<FiShare2 />}
             />
           </div>
 
           {/* =====================================================
-              BOTTOM
+              RECENT SECTIONS
           ===================================================== */}
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:gap-8">
-            {/* =================================================
+            {/* ===================================================
                 RECENT UPLOADS
-            ================================================= */}
+            =================================================== */}
 
             <div className="min-w-0 overflow-hidden rounded-2xl bg-white shadow-[0_2px_12px_rgba(0,0,0,0.04)] transition hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
               <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-6 sm:py-5">
@@ -248,32 +232,22 @@ function Dashboard() {
                         </h3>
 
                         <p className="text-sm text-gray-500">
-                          {file.sizeLabel || formatStorage(file.size || 0)}
+                          {file.sizeLabel || ""}
                         </p>
                       </div>
                     </div>
 
                     <span className="shrink-0 text-right text-xs text-gray-400 sm:text-sm">
-                      {file.createdDate ||
-                        (file.createdAt
-                          ? new Date(file.createdAt).toLocaleDateString(
-                              undefined,
-                              {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                              },
-                            )
-                          : "")}
+                      {file.createdDate || ""}
                     </span>
                   </div>
                 ))
               )}
             </div>
 
-            {/* =================================================
+            {/* ===================================================
                 RECENT CHATS
-            ================================================= */}
+            =================================================== */}
 
             <div className="min-w-0 overflow-hidden rounded-2xl bg-white shadow-sm">
               <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-6 sm:py-5">
@@ -287,7 +261,54 @@ function Dashboard() {
                 </button>
               </div>
 
-              <RecentChats />
+              {recentChats.length === 0 ? (
+                <div className="px-4 py-10 text-center sm:px-6">
+                  <div className="mb-3 flex justify-center">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100">
+                      <FiMessageSquare size={18} className="text-gray-400" />
+                    </div>
+                  </div>
+
+                  <p className="text-sm font-medium text-gray-700">
+                    No chats yet
+                  </p>
+
+                  <p className="mt-1 text-xs text-gray-400">
+                    Your recent conversations will appear here.
+                  </p>
+                </div>
+              ) : (
+                recentChats.map((chat) => (
+                  <button
+                    key={chat.conversationId}
+                    type="button"
+                    onClick={() => navigate("/chat")}
+                    className="flex w-full min-w-0 items-center justify-between gap-3 border-b border-gray-100 px-4 py-4 text-left transition hover:bg-gray-50 last:border-none sm:px-6"
+                  >
+                    <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+                      <div className="relative shrink-0">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600">
+                          {getChatAvatar(chat)}
+                        </div>
+                      </div>
+
+                      <div className="min-w-0">
+                        <h3 className="truncate text-[15px] font-medium">
+                          {chat.name || "Conversation"}
+                        </h3>
+
+                        <p className="truncate text-sm text-gray-500">
+                          {chat.lastMessage || "No messages yet"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <span className="shrink-0 text-xs text-gray-400 sm:text-sm">
+                      {formatChatTime(chat.lastMessageTime)}
+                    </span>
+                  </button>
+                ))
+              )}
             </div>
           </div>
         </main>
@@ -295,10 +316,6 @@ function Dashboard() {
     </div>
   );
 }
-
-// =====================================================
-// CARD
-// =====================================================
 
 function Card({ title, value, subtitle, icon }) {
   return (
@@ -317,83 +334,6 @@ function Card({ title, value, subtitle, icon }) {
         </div>
       </div>
     </div>
-  );
-}
-
-// =====================================================
-// RECENT CHATS
-// =====================================================
-
-function RecentChats() {
-  const chats = [
-    {
-      name: "Design Guild",
-      message: "Tobias: uploaded the new spacing scale",
-      time: "2m",
-      avatar: "DG",
-      online: true,
-    },
-    {
-      name: "Priya Raman",
-      message: "Can you review the pricing deck?",
-      time: "14m",
-      avatar: "PR",
-      online: true,
-    },
-    {
-      name: "Marcus Vale",
-      message: "Voice message • 0:24",
-      time: "1h",
-      avatar: "MV",
-      online: false,
-    },
-    {
-      name: "Engineering",
-      message: "You: shipped to staging 🎉",
-      time: "3h",
-      avatar: "EN",
-      online: true,
-    },
-    {
-      name: "Tobias Lund",
-      message: "Thanks — that unblocks me.",
-      time: "Yesterday",
-      avatar: "TL",
-      online: false,
-    },
-  ];
-
-  return (
-    <>
-      {chats.map((chat, index) => (
-        <div
-          key={index}
-          className="flex min-w-0 items-center justify-between gap-3 border-b border-gray-100 px-4 py-4 last:border-none sm:px-6"
-        >
-          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-            <div className="relative shrink-0">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600">
-                {chat.avatar}
-              </div>
-
-              {chat.online && (
-                <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-green-500"></span>
-              )}
-            </div>
-
-            <div className="min-w-0">
-              <h3 className="truncate text-[15px] font-medium">{chat.name}</h3>
-
-              <p className="truncate text-sm text-gray-500">{chat.message}</p>
-            </div>
-          </div>
-
-          <span className="shrink-0 text-xs text-gray-400 sm:text-sm">
-            {chat.time}
-          </span>
-        </div>
-      ))}
-    </>
   );
 }
 
