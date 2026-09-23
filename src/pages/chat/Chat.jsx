@@ -21,15 +21,24 @@ import {
   FiUserPlus,
   FiCheck,
   FiX,
+  FiArrowLeft,
   FiTrash2,
 } from "react-icons/fi";
 
 import Sidebar from "../../components/layout/Sidebar";
 import Navbar from "../../components/layout/Navbar";
+import Avatar from "../../components/common/Avatar";
+import BottomNav from "./components/BottomNav";
+import GroupSection from "./components/GroupSection";
+import StatusSection from "./components/StatusSection";
+import CallsSection from "./components/CallsSection";
+import CallingOverlay from "./components/CallingOverlay";
 
-// const BACKEND_BASE = "http://localhost:3005";
-const BACKEND_BASE = "http://192.168.0.102:3005";
-
+const BACKEND_BASE =
+  import.meta.env.VITE_SOCKET_URL ||
+  (import.meta.env.VITE_BACKEND_URL
+    ? import.meta.env.VITE_BACKEND_URL.replace(/\/api$/, "")
+    : "http://localhost:3005");
 const formatFileSize = (size) => {
   if (!size) {
     return "0 B";
@@ -70,90 +79,49 @@ const getInitials = (name = "") =>
     .map((part) => part[0]?.toUpperCase())
     .join("") || "U";
 
-/*
- * Supports the common unread-count response shapes:
- *
- * { counts: { conversationId: 3 } }
- * { unreadCounts: { conversationId: 3 } }
- * { data: { conversationId: 3 } }
- *
- * and array forms such as:
- *
- * [
- *   { conversationId: "...", count: 3 }
- * ]
- */
-const normalizeUnreadCounts = (responseData) => {
+const normalizeUnreadCounts = (payload) => {
   const source =
-    responseData?.counts ??
-    responseData?.unreadCounts ??
-    responseData?.data ??
-    responseData ??
-    {};
-
-  const normalized = {};
+    payload?.counts || payload?.unreadCounts || payload?.data || payload || {};
 
   if (Array.isArray(source)) {
-    source.forEach((item) => {
+    return source.reduce((result, item) => {
       const key =
-        item?.conversationId || item?.chatId || item?.id || item?._id || "";
+        item?.conversationId || item?.chatId || item?.chatKey || item?._id;
 
-      const count = Number(
-        item?.count ?? item?.unreadCount ?? item?.unread ?? 0,
-      );
-
-      if (key && Number.isFinite(count)) {
-        normalized[String(key)] = Math.max(0, count);
+      if (key) {
+        result[String(key)] = Number(
+          item?.count ?? item?.unreadCount ?? item?.unread ?? 0,
+        );
       }
-    });
 
-    return normalized;
+      return result;
+    }, {});
   }
 
   if (source && typeof source === "object") {
-    Object.entries(source).forEach(([key, value]) => {
-      if (typeof value === "number") {
-        normalized[String(key)] = Math.max(0, value);
-        return;
-      }
-
-      if (typeof value === "string" && value.trim() !== "") {
-        const count = Number(value);
-
-        if (Number.isFinite(count)) {
-          normalized[String(key)] = Math.max(0, count);
-        }
-
-        return;
-      }
-
+    return Object.entries(source).reduce((result, [key, value]) => {
       if (value && typeof value === "object") {
-        const count = Number(
+        result[String(key)] = Number(
           value.count ?? value.unreadCount ?? value.unread ?? 0,
         );
-
-        if (Number.isFinite(count)) {
-          normalized[String(key)] = Math.max(0, count);
-        }
+      } else {
+        result[String(key)] = Number(value || 0);
       }
-    });
+
+      return result;
+    }, {});
   }
 
-  return normalized;
+  return {};
 };
 
 function Chat() {
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
-  const previewRequestsRef = useRef(new Set());
   const messagesContainerRef = useRef(null);
   const chatSearchInputRef = useRef(null);
-  const shouldScrollToBottomRef = useRef(false);
-  const loadingOlderMessagesRef = useRef(false);
-
-  // Typing refs
-  const typingTimeoutRef = useRef(null);
-  const typingChatRef = useRef(null);
+  const previewRequestsRef = useRef(new Set());
+  const previousMessageCountRef = useRef(0);
 
   const [messageText, setMessageText] = useState("");
   const [searchText, setSearchText] = useState("");
@@ -161,29 +129,27 @@ function Chat() {
   const [isRecording, setIsRecording] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
 
+  const [activeNavTab, setActiveNavTab] = useState("chat"); // 'chat' | 'groups' | 'status' | 'calls'
+  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [friendsList, setFriendsList] = useState([]);
+  const callingOverlayRef = useRef(null);
+
   const [selectedChatId, setSelectedChatId] = useState("");
   const [chats, setChats] = useState([]);
   const [friendRequests, setFriendRequests] = useState([]);
   const [userSearchResults, setUserSearchResults] = useState([]);
   const [friendActionState, setFriendActionState] = useState({});
-
   const [messagesByChat, setMessagesByChat] = useState({});
-
-  // =====================================================
-  // UNREAD MESSAGE COUNTS
-  // =====================================================
-
-  const [unreadCounts, setUnreadCounts] = useState({});
-
   const [sharedFiles, setSharedFiles] = useState([]);
   const [filePreviewUrls, setFilePreviewUrls] = useState({});
-
   const [uploadState, setUploadState] = useState({
     status: "idle",
     message: "",
   });
 
   const [paginationByChat, setPaginationByChat] = useState({});
+  const [unreadCounts, setUnreadCounts] = useState({});
+  const [typingByChat, setTypingByChat] = useState({});
 
   const [topMenuOpen, setTopMenuOpen] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -193,14 +159,15 @@ function Chat() {
   const [openMessageMenu, setOpenMessageMenu] = useState(null);
   const [deletingMessageId, setDeletingMessageId] = useState(null);
 
-  // =====================================================
-  // TYPING STATE
-  // =====================================================
+  /*
+   * Mobile:
+   * false = chat list
+   * true = selected chat
+   */
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
 
-  const [typingByChat, setTypingByChat] = useState({});
-
   // =====================================================
-  // CURRENT LOGGED-IN USER
+  // CURRENT USER
   // =====================================================
 
   const currentUser = JSON.parse(localStorage.getItem("user") || "null");
@@ -217,29 +184,25 @@ function Chat() {
     }
 
     try {
-      const [conversationResponse, friendsResponse, requestsResponse] =
-        await Promise.all([
-          api.get("/conversations", { params: { type: "private" } }),
-          api.get("/friends"),
-          api.get("/friends/requests"),
-        ]);
+      const [
+        conversationResponse,
+        friendsResponse,
+        requestsResponse,
+        unreadResponse,
+      ] = await Promise.all([
+        api.get("/conversations", {
+          params: { type: "private" },
+        }),
+        api.get("/friends"),
+        api.get("/friends/requests"),
+        api.get("/messages/unread-counts").catch(() => ({
+          data: {},
+        })),
+      ]);
 
-      let unreadMap = {};
+      const nextUnreadCounts = normalizeUnreadCounts(unreadResponse?.data);
 
-      /*
-       * Unread counts are loaded separately so that if the unread
-       * endpoint has a temporary issue, the main chat list still loads.
-       */
-      try {
-        const unreadResponse = await api.get("/messages/unread-counts");
-
-        unreadMap = normalizeUnreadCounts(unreadResponse.data);
-      } catch (unreadError) {
-        console.error(
-          "Unread counts load failed:",
-          unreadError.response?.data || unreadError.message,
-        );
-      }
+      setUnreadCounts(nextUnreadCounts);
 
       const conversationByFriendId = new Map();
 
@@ -268,6 +231,7 @@ function Chat() {
         .map((friend) => {
           const receiverId = String(friend._id);
           const conversation = conversationByFriendId.get(receiverId);
+
           const displayName = friend.name || friend.username || friend.email;
 
           if (!displayName || seenPrivateParticipants.has(receiverId)) {
@@ -277,21 +241,6 @@ function Chat() {
           seenPrivateParticipants.add(receiverId);
 
           const chatKey = [currentUserId, receiverId].sort().join("_");
-
-          /*
-           * Backend may return unread counts using:
-           * conversationId, chatKey, or chat id.
-           */
-          const unreadCount = Number(
-            unreadMap[String(conversation?._id || "")] ??
-              unreadMap[chatKey] ??
-              unreadMap[
-                String(
-                  conversation?._id ? conversation._id : `friend-${receiverId}`,
-                )
-              ] ??
-              0,
-          );
 
           return {
             id: conversation?._id
@@ -303,55 +252,31 @@ function Chat() {
             conversationId: conversation?._id ? String(conversation._id) : null,
 
             name: displayName,
+
             avatar: getInitials(displayName),
 
-            // IMPORTANT:
-            // Default is offline.
-            // request_presence will update the real status.
             online: false,
 
-            members: conversation ? "Offline" : "Friend - start a conversation",
+            members: conversation
+              ? "Private conversation"
+              : "Friend - start a conversation",
 
             message: conversation
               ? "No messages yet"
               : "Start a private conversation",
 
             time: "",
-            type: "private",
-            receiverId,
 
-            unreadCount: Number.isFinite(unreadCount)
-              ? Math.max(0, unreadCount)
-              : 0,
+            type: "private",
+
+            receiverId,
           };
         })
         .filter(Boolean);
 
-      /*
-       * Keep a separate map so realtime messages can update only
-       * the affected chat without changing the existing chat UI.
-       */
-      const nextUnreadCounts = {};
-
-      nextChats.forEach((chat) => {
-        nextUnreadCounts[chat.chatKey] = chat.unreadCount || 0;
-
-        if (chat.conversationId) {
-          nextUnreadCounts[chat.conversationId] = chat.unreadCount || 0;
-        }
-
-        nextUnreadCounts[chat.id] = chat.unreadCount || 0;
-      });
-
       setFriendRequests(requestsResponse.data?.requests || []);
+      setFriendsList(friendsResponse.data?.friends || []);
       setChats(nextChats);
-
-      /*
-       * Only replace unread state when the unread endpoint returned
-       * something usable. This prevents a temporary endpoint failure
-       * from wiping existing realtime counts.
-       */
-      setUnreadCounts(nextUnreadCounts);
 
       setSelectedChatId((previousId) =>
         nextChats.some((chat) => chat.id === previousId) ? previousId : "",
@@ -366,93 +291,7 @@ function Chat() {
   }, [loadChatData]);
 
   // =====================================================
-  // ONLINE / OFFLINE PRESENCE
-  // =====================================================
-
-  const presenceUserIds = useMemo(
-    () =>
-      chats
-        .map((chat) => chat.receiverId)
-        .filter(Boolean)
-        .map((id) => String(id))
-        .sort(),
-    [chats],
-  );
-
-  const presenceUserIdsKey = presenceUserIds.join(",");
-
-  useEffect(() => {
-    const handleUserStatusChanged = ({ userId, isOnline }) => {
-      const changedUserId = String(userId);
-
-      setChats((previousChats) =>
-        previousChats.map((chat) => {
-          if (String(chat.receiverId) !== changedUserId) {
-            return chat;
-          }
-
-          const online = Boolean(isOnline);
-
-          return {
-            ...chat,
-            online,
-            members: online ? "Online" : "Offline",
-          };
-        }),
-      );
-    };
-
-    socket.on("user_status_changed", handleUserStatusChanged);
-
-    return () => {
-      socket.off("user_status_changed", handleUserStatusChanged);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isConnected || !presenceUserIds.length) {
-      return;
-    }
-
-    socket.emit(
-      "request_presence",
-      {
-        userIds: presenceUserIds,
-      },
-      (response) => {
-        if (!response?.success) {
-          return;
-        }
-
-        const statuses = response.statuses || {};
-
-        setChats((previousChats) =>
-          previousChats.map((chat) => {
-            const userId = String(chat.receiverId || "");
-
-            if (!Object.prototype.hasOwnProperty.call(statuses, userId)) {
-              return {
-                ...chat,
-                online: false,
-                members: "Offline",
-              };
-            }
-
-            const isOnline = Boolean(statuses[userId]);
-
-            return {
-              ...chat,
-              online: isOnline,
-              members: isOnline ? "Online" : "Offline",
-            };
-          }),
-        );
-      },
-    );
-  }, [isConnected, presenceUserIdsKey, presenceUserIds]);
-
-  // =====================================================
-  // SEARCH USERS
+  // USER SEARCH
   // =====================================================
 
   useEffect(() => {
@@ -468,7 +307,9 @@ function Chat() {
     const searchUsers = async () => {
       try {
         const response = await api.get("/friends/search", {
-          params: { q: query },
+          params: {
+            q: query,
+          },
         });
 
         if (isActive) {
@@ -495,43 +336,38 @@ function Chat() {
   // SELECTED CHAT
   // =====================================================
 
-  const selectedUser = chats.find((chat) => chat.id === selectedChatId) || null;
+  const selectedUser = selectedGroup
+    ? {
+        id: selectedGroup._id,
+        _id: selectedGroup._id,
+        conversationId: selectedGroup._id,
+        chatKey: selectedGroup._id,
+        name: selectedGroup.name,
+        avatar: selectedGroup.avatar || getInitials(selectedGroup.name),
+        type: "group",
+        isGroup: true,
+        groupData: selectedGroup,
+      }
+    : chats.find((chat) => chat.id === selectedChatId) || null;
 
   const selectedUserType = selectedUser?.type || "";
-  const selectedUserName = selectedUser?.name || "";
+
   const selectedUserId = selectedUser?.conversationId;
+
   const selectedUserReceiverId = selectedUser?.receiverId;
 
-  // =====================================================
-  // ACTIVE CHAT ID
-  // =====================================================
-
-  const activeChatId =
-    selectedUser?.type === "private" &&
-    selectedUser?.receiverId &&
-    currentUserId
+  const activeChatId = selectedGroup
+    ? String(selectedGroup._id)
+    : selectedUser?.type === "private" &&
+        selectedUser?.receiverId &&
+        currentUserId
       ? selectedUser.chatKey
       : String(selectedUser?.chatKey || "");
-
-  // =====================================================
-  // CURRENT MESSAGES
-  // =====================================================
 
   const currentMessages = useMemo(
     () => messagesByChat[activeChatId] || [],
     [messagesByChat, activeChatId],
   );
-
-  // =====================================================
-  // CURRENT TYPING STATUS
-  // =====================================================
-
-  const selectedUserIsTyping =
-    selectedUserType === "private" && Boolean(typingByChat[activeChatId]);
-
-  // =====================================================
-  // FILTER CHATS
-  // =====================================================
 
   const filteredChats = chats.filter((chat) =>
     chat.name.toLowerCase().includes(searchText.toLowerCase()),
@@ -539,33 +375,45 @@ function Chat() {
 
   const visibleChats = filteredChats;
 
+  const markChatAsRead = useCallback(async (conversationId, chatKey) => {
+    if (!conversationId) {
+      return;
+    }
+
+    setUnreadCounts((previous) => {
+      const next = { ...previous };
+
+      [chatKey, conversationId, String(chatKey || "")].forEach((key) => {
+        if (key) {
+          next[String(key)] = 0;
+        }
+      });
+
+      return next;
+    });
+
+    try {
+      if (socket.connected) {
+        socket.emit("mark_messages_read", { conversationId });
+        return;
+      }
+
+      await api.post(`/messages/conversation/${conversationId}/read`);
+    } catch (error) {
+      console.error("Mark chat as read failed:", error);
+    }
+  }, []);
+
   // =====================================================
-  // OPEN CHAT
+  // OPEN CHAT & CALL ACTIONS
   // =====================================================
 
   const openChat = async (chat) => {
-    setSelectionMode(false);
-    setSelectedMessageIds([]);
-    setOpenMessageMenu(null);
-    setTopMenuOpen(false);
-
-    /*
-     * Opening a chat means the user has read the messages.
-     * Clear the local badge immediately.
-     */
-    setUnreadCounts((previous) => ({
-      ...previous,
-      [chat.chatKey]: 0,
-      [chat.id]: 0,
-      ...(chat.conversationId
-        ? {
-            [chat.conversationId]: 0,
-          }
-        : {}),
-    }));
-
+    setSelectedGroup(null);
     if (chat.conversationId) {
       setSelectedChatId(chat.id);
+      setMobileChatOpen(true);
+      await markChatAsRead(chat.conversationId, chat.chatKey);
       return;
     }
 
@@ -579,6 +427,7 @@ function Chat() {
       await loadChatData();
 
       setSelectedChatId(conversationId);
+      setMobileChatOpen(true);
     } catch (error) {
       console.error("Private conversation creation failed:", error);
 
@@ -586,8 +435,34 @@ function Chat() {
     }
   };
 
+  const closeMobileChat = () => {
+    setMobileChatOpen(false);
+    setTopMenuOpen(false);
+    setShowEmoji(false);
+    setOpenMessageMenu(null);
+    setSelectionMode(false);
+    setSelectedMessageIds([]);
+  };
+
+  const handleSelectGroup = (group) => {
+    setSelectedGroup(group);
+    setSelectedChatId(`group-${group._id}`);
+    setMobileChatOpen(true);
+    if (socket.connected) {
+      socket.emit("join_chat", { conversationId: group._id });
+    }
+  };
+
+  const handleStartCall = (targetUser, callType = "voice") => {
+    callingOverlayRef.current?.startCall(
+      targetUser,
+      callType,
+      selectedUser?.conversationId || activeChatId,
+    );
+  };
+
   // =====================================================
-  // FRIEND REQUEST
+  // FRIEND REQUESTS
   // =====================================================
 
   const sendFriendRequest = async (user) => {
@@ -617,7 +492,12 @@ function Chat() {
       if (status) {
         setUserSearchResults((previous) =>
           previous.map((item) =>
-            String(item._id) === userId ? { ...item, status } : item,
+            String(item._id) === userId
+              ? {
+                  ...item,
+                  status,
+                }
+              : item,
           ),
         );
       } else {
@@ -625,8 +505,12 @@ function Chat() {
       }
     } finally {
       setFriendActionState((previous) => {
-        const next = { ...previous };
+        const next = {
+          ...previous,
+        };
+
         delete next[userId];
+
         return next;
       });
     }
@@ -650,8 +534,12 @@ function Chat() {
       alert(error.response?.data?.message || "Unable to update friend request");
     } finally {
       setFriendActionState((previous) => {
-        const next = { ...previous };
+        const next = {
+          ...previous,
+        };
+
         delete next[requestId];
+
         return next;
       });
     }
@@ -665,7 +553,6 @@ function Chat() {
     const token = localStorage.getItem("token");
 
     if (!token) {
-      console.log("TOKEN MISSING");
       return;
     }
 
@@ -674,24 +561,16 @@ function Chat() {
     };
 
     const handleConnect = () => {
-      console.log("CHAT DEBUG authenticated current user ID:", currentUserId);
-
-      console.log("=================================");
-      console.log("SOCKET CONNECTED");
-      console.log("SOCKET ID:", socket.id);
-      console.log("USER ID:", currentUserId);
-      console.log("=================================");
-
       setIsConnected(true);
     };
 
     const handleDisconnect = () => {
-      console.log("SOCKET DISCONNECTED");
       setIsConnected(false);
     };
 
     const handleConnectError = (error) => {
       console.error("SOCKET ERROR:", error.message);
+
       setIsConnected(false);
     };
 
@@ -713,12 +592,99 @@ function Chat() {
   }, [currentUserId]);
 
   // =====================================================
-  // FORMAT MESSAGES
+  // PRESENCE
   // =====================================================
 
-  const formatMessages = useCallback(
-    (messages) =>
-      messages.map((message) => {
+  useEffect(() => {
+    const handleUserStatusChanged = (payload) => {
+      const userId = String(payload?.userId || payload?.id || "");
+
+      if (!userId) {
+        return;
+      }
+
+      setChats((previous) =>
+        previous.map((chat) =>
+          String(chat.receiverId) === userId
+            ? {
+                ...chat,
+                online: payload?.online ?? payload?.status === "online",
+              }
+            : chat,
+        ),
+      );
+    };
+
+    const handlePresence = (payload) => {
+      const userId = String(payload?.userId || payload?.id || "");
+
+      if (!userId) {
+        return;
+      }
+
+      setChats((previous) =>
+        previous.map((chat) =>
+          String(chat.receiverId) === userId
+            ? {
+                ...chat,
+                online: payload?.online ?? payload?.status === "online",
+              }
+            : chat,
+        ),
+      );
+    };
+
+    socket.on("user_status_changed", handleUserStatusChanged);
+    socket.on("presence", handlePresence);
+
+    if (socket.connected) {
+      const userIds = chats
+        .map((chat) => chat.receiverId)
+        .filter(Boolean)
+        .map((userId) => String(userId));
+
+      if (userIds.length > 0) {
+        socket.emit("request_presence", { userIds });
+      }
+    }
+
+    return () => {
+      socket.off("user_status_changed", handleUserStatusChanged);
+      socket.off("presence", handlePresence);
+    };
+  }, [chats]);
+
+  // =====================================================
+  // LOAD CHAT HISTORY
+  // =====================================================
+
+  const refreshCurrentConversationMessages = useCallback(async () => {
+    if (!activeChatId || !selectedUser?.conversationId) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+
+      if (!token) {
+        return;
+      }
+
+      const response = await axios.get(
+        `${BACKEND_BASE}/api/messages/${activeChatId}`,
+        {
+          params: {
+            limit: 20,
+          },
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      const messages = response.data?.messages || [];
+
+      const formattedMessages = messages.map((message) => {
         let type = "received";
 
         if (selectedUserType === "private") {
@@ -734,289 +700,94 @@ function Chat() {
           _id: message._id ? String(message._id) : undefined,
           senderId: String(message.senderId || ""),
           receiverId: message.receiverId ? String(message.receiverId) : null,
-          status: message.status || "sent",
           type: message.messageType === "file" ? "file" : type,
         };
-      }),
-    [currentUserId, selectedUserType],
-  );
+      });
 
-  // =====================================================
-  // LOAD LATEST 20 MESSAGES
-  // =====================================================
+      setMessagesByChat((previous) => ({
+        ...previous,
+        [activeChatId]: formattedMessages,
+      }));
 
-  useEffect(() => {
-    if (!activeChatId || !selectedUser?.conversationId) {
-      return;
+      const hasMore =
+        response.data?.hasMore ??
+        response.data?.pagination?.hasMore ??
+        messages.length >= 20;
+
+      const lastMessage = formattedMessages[0];
+
+      setPaginationByChat((previous) => ({
+        ...previous,
+        [activeChatId]: {
+          hasMore,
+          nextCursor:
+            response.data?.nextCursor ||
+            response.data?.pagination?.nextCursor ||
+            lastMessage?.createdAt ||
+            lastMessage?._id ||
+            null,
+          loading: false,
+        },
+      }));
+    } catch (error) {
+      console.error(
+        "CHAT HISTORY ERROR:",
+        error.response?.data || error.message,
+      );
     }
-
-    let cancelled = false;
-
-    const fetchMessages = async () => {
-      try {
-        const token = localStorage.getItem("token");
-
-        if (!token) {
-          return;
-        }
-
-        setPaginationByChat((prev) => ({
-          ...prev,
-          [activeChatId]: {
-            hasMore: true,
-            nextCursor: null,
-            loading: false,
-          },
-        }));
-
-        setSelectedMessageIds([]);
-        setSelectionMode(false);
-        setTopMenuOpen(false);
-        setOpenMessageMenu(null);
-
-        const response = await axios.get(
-          `${BACKEND_BASE}/api/messages/${activeChatId}`,
-          {
-            params: {
-              limit: 20,
-            },
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          },
-        );
-
-        if (cancelled) {
-          return;
-        }
-
-        const formattedMessages = formatMessages(response.data?.messages || []);
-
-        const pagination = response.data?.pagination || {};
-
-        setMessagesByChat((prev) => ({
-          ...prev,
-          [activeChatId]: formattedMessages,
-        }));
-
-        setPaginationByChat((prev) => ({
-          ...prev,
-          [activeChatId]: {
-            hasMore: Boolean(pagination.hasMore),
-            nextCursor: pagination.nextCursor || null,
-            loading: false,
-          },
-        }));
-
-        /*
-         * The chat has been opened and its history has been loaded,
-         * therefore its unread badge should disappear.
-         */
-        setUnreadCounts((previous) => ({
-          ...previous,
-          [activeChatId]: 0,
-          [selectedUser.conversationId]: 0,
-          [selectedChatId]: 0,
-        }));
-
-        shouldScrollToBottomRef.current = true;
-
-        socket.emit("mark_messages_read", {
-          conversationId: selectedUser.conversationId,
-        });
-      } catch (error) {
-        if (!cancelled) {
-          console.error(
-            "CHAT HISTORY ERROR:",
-            error.response?.data || error.message,
-          );
-        }
-      }
-    };
-
-    fetchMessages();
-
-    return () => {
-      cancelled = true;
-    };
   }, [
     activeChatId,
     currentUserId,
-    formatMessages,
-    selectedChatId,
     selectedUser?.conversationId,
+    selectedUserType,
   ]);
-
-  // =====================================================
-  // LOAD OLDER 20 MESSAGES
-  // =====================================================
-
-  const loadOlderMessages = useCallback(async () => {
-    if (
-      !activeChatId ||
-      !selectedUser?.conversationId ||
-      loadingOlderMessagesRef.current
-    ) {
-      return;
-    }
-
-    const pagination = paginationByChat[activeChatId];
-
-    if (!pagination?.hasMore || !pagination.nextCursor) {
-      return;
-    }
-
-    const container = messagesContainerRef.current;
-
-    const previousScrollHeight = container?.scrollHeight || 0;
-    const previousScrollTop = container?.scrollTop || 0;
-
-    const { createdAt, id } = pagination.nextCursor;
-
-    loadingOlderMessagesRef.current = true;
-
-    setPaginationByChat((prev) => ({
-      ...prev,
-      [activeChatId]: {
-        ...prev[activeChatId],
-        loading: true,
-      },
-    }));
-
-    try {
-      const token = localStorage.getItem("token");
-
-      if (!token) {
-        return;
-      }
-
-      const response = await axios.get(
-        `${BACKEND_BASE}/api/messages/${activeChatId}`,
-        {
-          params: {
-            limit: 20,
-            before: createdAt,
-            beforeId: id,
-          },
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
-
-      const olderMessages = formatMessages(response.data?.messages || []);
-
-      const nextPagination = response.data?.pagination || {};
-
-      setMessagesByChat((prev) => {
-        const existing = prev[activeChatId] || [];
-
-        const existingIds = new Set(
-          existing.map((message) => String(message._id)),
-        );
-
-        const uniqueOlder = olderMessages.filter(
-          (message) => !existingIds.has(String(message._id)),
-        );
-
-        return {
-          ...prev,
-          [activeChatId]: [...uniqueOlder, ...existing],
-        };
-      });
-
-      setPaginationByChat((prev) => ({
-        ...prev,
-        [activeChatId]: {
-          hasMore: Boolean(nextPagination.hasMore),
-          nextCursor: nextPagination.nextCursor || null,
-          loading: false,
-        },
-      }));
-
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const currentContainer = messagesContainerRef.current;
-
-          if (!currentContainer) {
-            return;
-          }
-
-          const heightDifference =
-            currentContainer.scrollHeight - previousScrollHeight;
-
-          currentContainer.scrollTop = previousScrollTop + heightDifference;
-        });
-      });
-    } catch (error) {
-      console.error(
-        "OLDER CHAT HISTORY ERROR:",
-        error.response?.data || error.message,
-      );
-
-      setPaginationByChat((prev) => ({
-        ...prev,
-        [activeChatId]: {
-          ...prev[activeChatId],
-          loading: false,
-        },
-      }));
-    } finally {
-      loadingOlderMessagesRef.current = false;
-    }
-  }, [
-    activeChatId,
-    formatMessages,
-    paginationByChat,
-    selectedUser?.conversationId,
-  ]);
-
-  // =====================================================
-  // MESSAGE SCROLL
-  // =====================================================
-
-  const handleMessagesScroll = (event) => {
-    if (event.currentTarget.scrollTop <= 80) {
-      loadOlderMessages();
-    }
-  };
 
   useEffect(() => {
-    if (!shouldScrollToBottomRef.current) {
+    if (!selectedUser?.conversationId || !activeChatId) {
       return;
     }
 
-    shouldScrollToBottomRef.current = false;
+    markChatAsRead(selectedUser.conversationId, activeChatId);
+  }, [activeChatId, markChatAsRead, selectedUser?.conversationId]);
 
-    requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({
-        behavior: "auto",
-      });
-    });
-  }, [currentMessages.length, selectedChatId]);
+  useEffect(() => {
+    refreshCurrentConversationMessages();
+  }, [refreshCurrentConversationMessages]);
+
+  useEffect(() => {
+    const handleChatRefresh = async () => {
+      await loadChatData();
+      await refreshCurrentConversationMessages();
+    };
+
+    window.addEventListener("syncspace:chat-updated", handleChatRefresh);
+    window.addEventListener("syncspace:backup-restored", handleChatRefresh);
+
+    return () => {
+      window.removeEventListener("syncspace:chat-updated", handleChatRefresh);
+      window.removeEventListener(
+        "syncspace:backup-restored",
+        handleChatRefresh,
+      );
+    };
+  }, [loadChatData, refreshCurrentConversationMessages]);
 
   // =====================================================
   // LOAD SHARED FILES
   // =====================================================
 
   useEffect(() => {
-    if (!activeChatId || !selectedUserType) {
+    if (!activeChatId || !selectedUserType || !selectedUser?.conversationId) {
       return;
     }
 
     const loadConversationFiles = async () => {
       try {
-        const conversationId = selectedUser?.conversationId;
-
-        if (!conversationId) {
-          return;
-        }
-
-        const filesResponse = await api.get(
-          `/conversations/${conversationId}/files`,
+        const response = await api.get(
+          `/conversations/${selectedUser.conversationId}/files`,
         );
 
-        setSharedFiles(filesResponse.data?.files || []);
+        setSharedFiles(response.data?.files || []);
       } catch (error) {
         console.error("Conversation files load failed:", error);
 
@@ -1025,17 +796,10 @@ function Chat() {
     };
 
     loadConversationFiles();
-  }, [
-    activeChatId,
-    selectedUser?.conversationId,
-    selectedUserName,
-    selectedUserId,
-    selectedUserReceiverId,
-    selectedUserType,
-  ]);
+  }, [activeChatId, selectedUser?.conversationId, selectedUserType]);
 
   // =====================================================
-  // JOIN CURRENT CHAT
+  // JOIN CHAT
   // =====================================================
 
   useEffect(() => {
@@ -1057,201 +821,27 @@ function Chat() {
     selectedChatId,
     selectedUserReceiverId,
     selectedUserType,
-    selectedUserName,
     selectedUserId,
     activeChatId,
-    currentUserId,
   ]);
-
-  // =====================================================
-  // STOP TYPING WHEN CHAT CHANGES / COMPONENT UNMOUNTS
-  // =====================================================
-
-  const stopTyping = useCallback(() => {
-    if (typingTimeoutRef.current) {
-      window.clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = null;
-    }
-
-    const previousTypingChat = typingChatRef.current;
-
-    if (
-      previousTypingChat?.receiverId &&
-      previousTypingChat?.conversationId &&
-      socket.connected
-    ) {
-      socket.emit("typing_stop", {
-        receiverId: String(previousTypingChat.receiverId),
-        conversationId: String(previousTypingChat.conversationId),
-      });
-    }
-
-    typingChatRef.current = null;
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      stopTyping();
-    };
-  }, [stopTyping]);
-
-  useEffect(() => {
-    stopTyping();
-  }, [selectedChatId, stopTyping]);
-
-  // =====================================================
-  // HANDLE TYPING
-  // =====================================================
-
-  const handleTyping = (value) => {
-    setMessageText(value);
-
-    if (
-      selectedUserType !== "private" ||
-      !selectedUserReceiverId ||
-      !selectedUser?.conversationId ||
-      !socket.connected
-    ) {
-      return;
-    }
-
-    const typingData = {
-      receiverId: String(selectedUserReceiverId),
-      conversationId: String(selectedUser.conversationId),
-    };
-
-    const previousTypingChat = typingChatRef.current;
-
-    if (
-      !previousTypingChat ||
-      String(previousTypingChat.receiverId) !== String(typingData.receiverId) ||
-      String(previousTypingChat.conversationId) !==
-        String(typingData.conversationId)
-    ) {
-      socket.emit("typing_start", typingData);
-
-      typingChatRef.current = typingData;
-    }
-
-    if (typingTimeoutRef.current) {
-      window.clearTimeout(typingTimeoutRef.current);
-    }
-
-    if (!value.trim()) {
-      stopTyping();
-      return;
-    }
-
-    typingTimeoutRef.current = window.setTimeout(() => {
-      stopTyping();
-    }, 1500);
-  };
-
-  // =====================================================
-  // RECEIVE TYPING STATUS
-  // =====================================================
-
-  useEffect(() => {
-    const handleUserTyping = ({ conversationId, userId, isTyping }) => {
-      if (!conversationId || !userId) {
-        return;
-      }
-
-      if (String(userId) === currentUserId) {
-        return;
-      }
-
-      const chat = chats.find(
-        (item) => String(item.conversationId || "") === String(conversationId),
-      );
-
-      const chatKey = chat?.chatKey;
-
-      if (!chatKey) {
-        return;
-      }
-
-      setTypingByChat((previous) => ({
-        ...previous,
-        [chatKey]: Boolean(isTyping),
-      }));
-    };
-
-    socket.on("user_typing", handleUserTyping);
-
-    return () => {
-      socket.off("user_typing", handleUserTyping);
-    };
-  }, [chats, currentUserId]);
 
   // =====================================================
   // LOCAL MESSAGE HELPER
   // =====================================================
 
-  const addMessageToChat = (chatId, message) => {
-    setMessagesByChat((prev) => {
-      const existingMessages = prev[chatId] || [];
-
-      const nextMessages = appendUniqueMessage(existingMessages, message);
-
-      return {
-        ...prev,
-        [chatId]: nextMessages,
-      };
-    });
-  };
-
-  // =====================================================
-  // INCREMENT UNREAD COUNT
-  // =====================================================
-
-  const incrementUnreadCount = useCallback((chatKey) => {
-    if (!chatKey) {
+  const addMessageToChat = useCallback((chatId, message) => {
+    if (!chatId) {
       return;
     }
 
-    setUnreadCounts((previous) => {
-      const currentCount = Number(previous[chatKey] || 0);
+    setMessagesByChat((previous) => {
+      const existing = previous[chatId] || [];
 
       return {
         ...previous,
-        [chatKey]: currentCount + 1,
+        [chatId]: appendUniqueMessage(existing, message),
       };
     });
-  }, []);
-
-  // =====================================================
-  // UPDATE CHAT PREVIEW
-  // =====================================================
-
-  const updateChatPreview = useCallback((chatKey, message) => {
-    if (!chatKey) {
-      return;
-    }
-
-    setChats((previousChats) =>
-      previousChats.map((chat) => {
-        if (String(chat.chatKey) !== String(chatKey)) {
-          return chat;
-        }
-
-        return {
-          ...chat,
-          message:
-            message?.messageType === "file" || message?.type === "file"
-              ? message?.attachment?.name || "Attachment"
-              : message?.text || chat.message,
-          time:
-            message?.time ||
-            (message?.createdAt
-              ? new Date(message.createdAt).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-              : chat.time),
-        };
-      }),
-    );
   }, []);
 
   // =====================================================
@@ -1260,72 +850,58 @@ function Chat() {
 
   useEffect(() => {
     const handlePrivateMessage = (message) => {
-      console.log("CHAT DEBUG receive_private_message event:", message);
-
       if (!message?.chatId) {
         return;
       }
 
       const messageChatId = String(message.chatId);
 
-      const isCurrentChat = messageChatId === String(activeChatId);
+      const isActive = messageChatId === String(activeChatId);
 
-      const isOwnMessage =
-        String(message.senderId || "") === String(currentUserId);
-
-      if (isCurrentChat) {
-        shouldScrollToBottomRef.current = true;
-
-        /*
-         * Current chat is open, so incoming message is immediately read.
-         */
-        if (selectedUser?.conversationId && !isOwnMessage) {
-          socket.emit("mark_messages_read", {
-            conversationId: selectedUser.conversationId,
-          });
-        }
-
+      if (isActive) {
         setUnreadCounts((previous) => ({
           ...previous,
           [messageChatId]: 0,
+          [selectedUser?.conversationId || messageChatId]: 0,
         }));
-      } else if (!isOwnMessage) {
-        /*
-         * Message arrived in another chat.
-         * Increase that chat's unread badge.
-         */
-        incrementUnreadCount(messageChatId);
       }
 
-      updateChatPreview(messageChatId, message);
-
-      setMessagesByChat((prev) => {
-        const existingMessages = prev[message.chatId] || [];
-
-        const messageType =
-          String(message.senderId) === currentUserId ? "sent" : "received";
+      setMessagesByChat((previous) => {
+        const existing = previous[messageChatId] || [];
 
         const newMessage = {
           ...message,
-
           _id: message._id ? String(message._id) : undefined,
-
           senderId: String(message.senderId || ""),
-
           receiverId: message.receiverId ? String(message.receiverId) : null,
-
-          status: message.status || "sent",
-
-          type: messageType,
+          type:
+            String(message.senderId) === currentUserId ? "sent" : "received",
         };
-
-        const nextMessages = appendUniqueMessage(existingMessages, newMessage);
 
         return {
-          ...prev,
-          [message.chatId]: nextMessages,
+          ...previous,
+          [messageChatId]: appendUniqueMessage(existing, newMessage),
         };
       });
+
+      if (!isActive) {
+        setUnreadCounts((previous) => ({
+          ...previous,
+          [messageChatId]: Number(previous[messageChatId] || 0) + 1,
+        }));
+      }
+
+      setChats((previous) =>
+        previous.map((chat) =>
+          chat.chatKey === messageChatId
+            ? {
+                ...chat,
+                message: message.text || chat.message,
+                time: message.time || chat.time,
+              }
+            : chat,
+        ),
+      );
     };
 
     socket.on("receive_private_message", handlePrivateMessage);
@@ -1333,13 +909,7 @@ function Chat() {
     return () => {
       socket.off("receive_private_message", handlePrivateMessage);
     };
-  }, [
-    currentUserId,
-    activeChatId,
-    selectedUser?.conversationId,
-    incrementUnreadCount,
-    updateChatPreview,
-  ]);
+  }, [currentUserId, activeChatId, selectedUser?.conversationId]);
 
   // =====================================================
   // RECEIVE GROUP MESSAGE
@@ -1347,51 +917,35 @@ function Chat() {
 
   useEffect(() => {
     const handleGroupMessage = (message) => {
-      console.log("RECEIVED GROUP MESSAGE:", message);
-
       if (!message?.chatId) {
         return;
       }
 
-      const messageChatId = String(message.chatId);
+      const chatId = String(message.chatId);
 
-      const isCurrentChat = messageChatId === String(activeChatId);
+      const isActive = chatId === String(activeChatId);
 
-      const isOwnMessage =
-        String(message.senderId || "") === String(currentUserId);
-
-      if (isCurrentChat) {
-        shouldScrollToBottomRef.current = true;
-      } else if (!isOwnMessage) {
-        incrementUnreadCount(messageChatId);
+      if (isActive) {
+        setUnreadCounts((previous) => ({
+          ...previous,
+          [chatId]: 0,
+          [selectedUser?.conversationId || chatId]: 0,
+        }));
       }
 
-      updateChatPreview(messageChatId, message);
-
-      setMessagesByChat((prev) => {
-        const existingMessages = prev[message.chatId] || [];
-
-        const newMessage = {
-          ...message,
-
-          _id: message._id ? String(message._id) : undefined,
-
-          senderId: String(message.senderId || ""),
-
-          receiverId: message.receiverId ? String(message.receiverId) : null,
-
-          status: message.status || "sent",
-
-          type:
-            String(message.senderId) === currentUserId ? "sent" : "received",
-        };
-
-        return {
-          ...prev,
-
-          [message.chatId]: appendUniqueMessage(existingMessages, newMessage),
-        };
+      addMessageToChat(chatId, {
+        ...message,
+        _id: message._id ? String(message._id) : undefined,
+        senderId: String(message.senderId || ""),
+        type: String(message.senderId) === currentUserId ? "sent" : "received",
       });
+
+      if (!isActive) {
+        setUnreadCounts((previous) => ({
+          ...previous,
+          [chatId]: Number(previous[chatId] || 0) + 1,
+        }));
+      }
     };
 
     socket.on("receive_message", handleGroupMessage);
@@ -1399,7 +953,12 @@ function Chat() {
     return () => {
       socket.off("receive_message", handleGroupMessage);
     };
-  }, [currentUserId, activeChatId, incrementUnreadCount, updateChatPreview]);
+  }, [
+    addMessageToChat,
+    activeChatId,
+    currentUserId,
+    selectedUser?.conversationId,
+  ]);
 
   // =====================================================
   // RECEIVE FILE MESSAGE
@@ -1411,24 +970,8 @@ function Chat() {
         return;
       }
 
-      const messageChatId = String(message.chatId);
-
-      const isCurrentChat = messageChatId === String(activeChatId);
-
-      const isOwnMessage =
-        String(message.senderId || "") === String(currentUserId);
-
-      if (isCurrentChat) {
-        shouldScrollToBottomRef.current = true;
-      } else if (!isOwnMessage) {
-        incrementUnreadCount(messageChatId);
-      }
-
-      updateChatPreview(messageChatId, message);
-
       addMessageToChat(message.chatId, {
         ...message,
-        status: message.status || "sent",
         type: "file",
       });
     };
@@ -1438,41 +981,107 @@ function Chat() {
     return () => {
       socket.off("receive_file_message", handleFileMessage);
     };
-  }, [activeChatId, currentUserId, incrementUnreadCount, updateChatPreview]);
+  }, [addMessageToChat]);
 
   // =====================================================
-  // MESSAGE STATUS - SENT / DELIVERED / READ
+  // TYPING
+  // =====================================================
+
+  const handleTyping = (value) => {
+    setMessageText(value);
+
+    if (!selectedUser || !socket.connected) {
+      return;
+    }
+
+    if (selectedUser.type === "private") {
+      socket.emit("typing_start", {
+        receiverId: selectedUser.receiverId,
+        chatId: activeChatId,
+      });
+    } else {
+      socket.emit("typing_start", {
+        chatId: selectedUser.id,
+      });
+    }
+  };
+
+  useEffect(() => {
+    const handleTypingStart = (payload) => {
+      const chatId = payload?.chatId || payload?.conversationId;
+
+      if (!chatId) {
+        return;
+      }
+
+      setTypingByChat((previous) => ({
+        ...previous,
+        [String(chatId)]: true,
+      }));
+    };
+
+    const handleTypingStop = (payload) => {
+      const chatId = payload?.chatId || payload?.conversationId;
+
+      if (!chatId) {
+        return;
+      }
+
+      setTypingByChat((previous) => ({
+        ...previous,
+        [String(chatId)]: false,
+      }));
+    };
+
+    socket.on("typing_start", handleTypingStart);
+
+    socket.on("typing_stop", handleTypingStop);
+
+    return () => {
+      socket.off("typing_start", handleTypingStart);
+
+      socket.off("typing_stop", handleTypingStop);
+    };
+  }, []);
+
+  // =====================================================
+  // MESSAGE STATUS
   // =====================================================
 
   useEffect(() => {
-    const handleMessageStatusUpdated = ({
-      messageId,
-      status,
-      deliveredAt,
-      readAt,
-    }) => {
+    const handleMessageStatusUpdated = (payload) => {
+      const messageId = payload?.messageId || payload?._id;
+
+      const status = payload?.status;
+
       if (!messageId || !status) {
         return;
       }
 
-      const normalizedMessageId = String(messageId);
+      if (status === "read") {
+        const chatId = payload?.chatId || payload?.conversationId;
+
+        if (chatId) {
+          setUnreadCounts((previous) => ({
+            ...previous,
+            [String(chatId)]: 0,
+            [selectedUser?.conversationId || String(chatId)]: 0,
+          }));
+        }
+      }
 
       setMessagesByChat((previous) => {
         const next = {};
 
         Object.entries(previous).forEach(([chatId, messages]) => {
-          next[chatId] = messages.map((message) => {
-            if (String(message._id) !== normalizedMessageId) {
-              return message;
-            }
-
-            return {
-              ...message,
-              status,
-              deliveredAt: deliveredAt || message.deliveredAt || null,
-              readAt: readAt || message.readAt || null,
-            };
-          });
+          next[chatId] = messages.map((message) =>
+            String(message._id) === String(messageId)
+              ? {
+                  ...message,
+                  status,
+                }
+              : message,
+          );
         });
 
         return next;
@@ -1484,7 +1093,195 @@ function Chat() {
     return () => {
       socket.off("message_status_updated", handleMessageStatusUpdated);
     };
-  }, []);
+  }, [selectedUser?.conversationId]);
+
+  // =====================================================
+  // PAGINATION
+  // =====================================================
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!activeChatId || !selectedUser?.conversationId) {
+      return;
+    }
+
+    const pagination = paginationByChat[activeChatId];
+
+    if (pagination?.loading || pagination?.hasMore === false) {
+      return;
+    }
+
+    const container = messagesContainerRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    const previousScrollHeight = container.scrollHeight;
+
+    const previousScrollTop = container.scrollTop;
+
+    setPaginationByChat((previous) => ({
+      ...previous,
+      [activeChatId]: {
+        ...(previous[activeChatId] || {}),
+        loading: true,
+      },
+    }));
+
+    try {
+      const token = localStorage.getItem("token");
+
+      const params = {
+        limit: 20,
+      };
+
+      if (pagination?.nextCursor) {
+        params.before = pagination.nextCursor;
+      }
+
+      const response = await axios.get(
+        `${BACKEND_BASE}/api/messages/${activeChatId}`,
+        {
+          params,
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      const messages = response.data?.messages || [];
+
+      const formattedMessages = messages.map((message) => {
+        let type = "received";
+
+        if (selectedUserType === "private") {
+          type =
+            String(message.receiverId) === currentUserId ? "received" : "sent";
+        } else {
+          type =
+            String(message.senderId) === currentUserId ? "sent" : "received";
+        }
+
+        return {
+          ...message,
+          _id: message._id ? String(message._id) : undefined,
+          senderId: String(message.senderId || ""),
+          receiverId: message.receiverId ? String(message.receiverId) : null,
+          type: message.messageType === "file" ? "file" : type,
+        };
+      });
+
+      setMessagesByChat((previous) => {
+        const existing = previous[activeChatId] || [];
+
+        const merged = [...formattedMessages, ...existing];
+
+        const unique = [];
+        const seen = new Set();
+
+        merged.forEach((message) => {
+          const id = String(
+            message._id ||
+              `${message.senderId}-${message.time}-${message.text}`,
+          );
+
+          if (!seen.has(id)) {
+            seen.add(id);
+            unique.push(message);
+          }
+        });
+
+        return {
+          ...previous,
+          [activeChatId]: unique,
+        };
+      });
+
+      const nextCursor =
+        response.data?.nextCursor ||
+        response.data?.pagination?.nextCursor ||
+        formattedMessages[0]?._id ||
+        null;
+
+      const hasMore =
+        response.data?.hasMore ??
+        response.data?.pagination?.hasMore ??
+        formattedMessages.length >= 20;
+
+      setPaginationByChat((previous) => ({
+        ...previous,
+        [activeChatId]: {
+          hasMore,
+          nextCursor,
+          loading: false,
+        },
+      }));
+
+      requestAnimationFrame(() => {
+        if (!messagesContainerRef.current) {
+          return;
+        }
+
+        const newScrollHeight = messagesContainerRef.current.scrollHeight;
+
+        messagesContainerRef.current.scrollTop =
+          newScrollHeight - previousScrollHeight + previousScrollTop;
+      });
+    } catch (error) {
+      console.error("Older messages load failed:", error);
+
+      setPaginationByChat((previous) => ({
+        ...previous,
+        [activeChatId]: {
+          ...(previous[activeChatId] || {}),
+          loading: false,
+        },
+      }));
+    }
+  }, [
+    activeChatId,
+    currentUserId,
+    paginationByChat,
+    selectedUser?.conversationId,
+    selectedUserType,
+  ]);
+
+  const handleMessagesScroll = () => {
+    const container = messagesContainerRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    if (container.scrollTop <= 80) {
+      loadOlderMessages();
+    }
+  };
+
+  // =====================================================
+  // AUTO SCROLL
+  // =====================================================
+
+  useEffect(() => {
+    const previousCount = previousMessageCountRef.current;
+
+    const currentCount = currentMessages.length;
+
+    if (currentCount === 0 || currentCount < previousCount) {
+      previousMessageCountRef.current = currentCount;
+      return;
+    }
+
+    const shouldScroll = currentCount > previousCount || previousCount === 0;
+
+    if (shouldScroll) {
+      messagesEndRef.current?.scrollIntoView({
+        behavior: "smooth",
+      });
+    }
+
+    previousMessageCountRef.current = currentCount;
+  }, [currentMessages.length, selectedChatId]);
 
   // =====================================================
   // SEND MESSAGE
@@ -1493,21 +1290,13 @@ function Chat() {
   const sendMessage = () => {
     const text = messageText.trim();
 
-    if (!text) {
-      return;
-    }
-
-    if (!selectedUser) {
-      console.log("SELECTED USER MISSING");
+    if (!text || !selectedUser) {
       return;
     }
 
     if (!currentUserId) {
-      console.log("CURRENT USER ID MISSING");
       return;
     }
-
-    stopTyping();
 
     const time = new Date().toLocaleTimeString([], {
       hour: "2-digit",
@@ -1518,94 +1307,43 @@ function Chat() {
       .toString(16)
       .slice(2)}`;
 
-    // ===================================================
-    // PRIVATE CHAT
-    // ===================================================
-
     if (selectedUser.type === "private") {
       if (!selectedUser.receiverId) {
-        console.log("RECEIVER ID MISSING");
         return;
       }
 
       const privateMessage = {
         chatId: activeChatId,
-        conversationId: selectedUser.conversationId,
         senderId: currentUserId,
         receiverId: String(selectedUser.receiverId),
         text,
         time,
-        status: "sent",
         type: "sent",
+        status: "sent",
         _id: localId,
       };
 
       if (socket.connected) {
-        shouldScrollToBottomRef.current = true;
-
         addMessageToChat(activeChatId, privateMessage);
 
-        socket.emit(
-          "send_private_message",
-          privateMessage,
-          (acknowledgement) => {
-            console.log(
-              "CHAT DEBUG send_private_message acknowledgement:",
-              acknowledgement,
-            );
-
-            if (!acknowledgement?.success) {
-              return;
-            }
-
-            const serverMessageId = acknowledgement.messageId;
-
-            if (!serverMessageId) {
-              return;
-            }
-
-            setMessagesByChat((previous) => {
-              const current = previous[activeChatId] || [];
-
-              return {
-                ...previous,
-                [activeChatId]: current.map((message) =>
-                  String(message._id) === String(localId)
-                    ? {
-                        ...message,
-                        _id: String(serverMessageId),
-                        conversationId:
-                          acknowledgement.conversationId ||
-                          message.conversationId,
-                        status: "sent",
-                      }
-                    : message,
-                ),
-              };
-            });
-          },
-        );
+        socket.emit("send_private_message", privateMessage);
       } else {
         addMessageToChat(activeChatId, privateMessage);
       }
     } else {
-      // =================================================
-      // GROUP CHAT
-      // =================================================
-
       const groupMessage = {
-        chatId: selectedUser.id,
+        chatId: selectedUser.conversationId || selectedUser.id,
+        conversationId: selectedUser.conversationId || selectedUser.id,
         senderId: currentUserId,
         text,
         time,
-        status: "sent",
         type: "sent",
+        status: "sent",
         _id: localId,
       };
 
       if (socket.connected) {
-        shouldScrollToBottomRef.current = true;
-
+        addMessageToChat(activeChatId, groupMessage);
         socket.emit("send_message", groupMessage);
       } else {
         addMessageToChat(activeChatId, groupMessage);
@@ -1614,53 +1352,13 @@ function Chat() {
 
     setMessageText("");
     setShowEmoji(false);
-  };
 
-  // =====================================================
-  // MESSAGE STATUS UI
-  // =====================================================
-
-  const MessageStatusTicks = ({ message }) => {
-    if (!isMessageSentByCurrentUser(message)) {
-      return null;
+    if (selectedUser?.type === "private") {
+      socket.emit("typing_stop", {
+        receiverId: selectedUser.receiverId,
+        chatId: activeChatId,
+      });
     }
-
-    const status = message?.status || "sent";
-
-    if (status === "read") {
-      return (
-        <span
-          className="ml-1 inline-flex items-center text-[10px] font-semibold"
-          title="Read"
-          aria-label="Read"
-        >
-          <span className="text-gray-300">✓</span>
-          <span className="text-[#38BDF8]">✓</span>
-        </span>
-      );
-    }
-
-    if (status === "delivered") {
-      return (
-        <span
-          className="ml-1 inline-flex items-center text-[10px] font-semibold text-gray-300"
-          title="Delivered"
-          aria-label="Delivered"
-        >
-          ✓✓
-        </span>
-      );
-    }
-
-    return (
-      <span
-        className="ml-1 text-[10px] font-semibold text-white"
-        title="Sent"
-        aria-label="Sent"
-      >
-        ✓
-      </span>
-    );
   };
 
   // =====================================================
@@ -1711,7 +1409,6 @@ function Chat() {
       });
 
       event.target.value = "";
-
       return;
     }
 
@@ -1722,7 +1419,6 @@ function Chat() {
       });
 
       event.target.value = "";
-
       return;
     }
 
@@ -1751,28 +1447,24 @@ function Chat() {
       const message = response.data?.message;
 
       if (message) {
-        shouldScrollToBottomRef.current = true;
-
         addMessageToChat(activeChatId, {
           ...message,
-          status: message.status || "sent",
           type: "file",
         });
+
+        setSharedFiles((previous) => [
+          {
+            fileId: message.fileId,
+            conversationId: message.conversationId,
+            name: message.attachment?.name || file.name,
+            mimeType: message.attachment?.mimeType || file.type,
+            size: message.attachment?.size || file.size,
+            type: getAttachmentType(message.attachment),
+            permission: message.attachment?.permission || "download",
+          },
+          ...previous.filter((item) => item.fileId !== message.fileId),
+        ]);
       }
-
-      setSharedFiles((prev) => [
-        {
-          fileId: message.fileId,
-          conversationId: message.conversationId,
-          name: message.attachment?.name || file.name,
-          mimeType: message.attachment?.mimeType || file.type,
-          size: message.attachment?.size || file.size,
-          type: getAttachmentType(message.attachment),
-          permission: message.attachment?.permission || "download",
-        },
-
-        ...prev.filter((item) => item.fileId !== message.fileId),
-      ]);
 
       setUploadState({
         status: "success",
@@ -1823,8 +1515,8 @@ function Chat() {
 
       const url = window.URL.createObjectURL(blob);
 
-      setFilePreviewUrls((prev) => ({
-        ...prev,
+      setFilePreviewUrls((previous) => ({
+        ...previous,
         [fileId]: url,
       }));
 
@@ -1941,37 +1633,46 @@ function Chat() {
   // DELETE MESSAGE
   // =====================================================
 
-  const removeMessageFromLocalChat = useCallback(
-    (messageId, chatId = activeChatId) => {
-      setMessagesByChat((prev) => ({
-        ...prev,
-        [chatId]: (prev[chatId] || []).filter(
-          (message) => String(message._id) !== String(messageId),
-        ),
-      }));
-    },
-    [activeChatId],
-  );
+  const isMessageSentByCurrentUser = (message) =>
+    String(message?.senderId || "") === String(currentUserId);
 
-  const deleteMessageForMe = async (message) => {
-    if (!message?._id || String(message._id).startsWith("local-")) {
-      removeMessageFromLocalChat(message?._id);
-
-      setOpenMessageMenu(null);
-
+  const removeMessageFromLocalChat = (messageId) => {
+    if (!messageId) {
       return;
     }
 
-    setDeletingMessageId(String(message._id));
+    setMessagesByChat((previous) => ({
+      ...previous,
+      [activeChatId]: (previous[activeChatId] || []).filter(
+        (message) => String(message._id) !== String(messageId),
+      ),
+    }));
+  };
+
+  const deleteMessageForMe = async (message) => {
+    if (!message?._id) {
+      return;
+    }
+
+    const messageId = String(message._id);
+
+    if (messageId.startsWith("local-")) {
+      removeMessageFromLocalChat(messageId);
+
+      setOpenMessageMenu(null);
+      return;
+    }
+
+    setDeletingMessageId(messageId);
 
     try {
-      await api.delete(`/messages/${message._id}`, {
+      await api.delete(`/messages/${messageId}`, {
         params: {
           mode: "me",
         },
       });
 
-      removeMessageFromLocalChat(message._id);
+      removeMessageFromLocalChat(messageId);
 
       setOpenMessageMenu(null);
     } catch (error) {
@@ -1988,11 +1689,10 @@ function Chat() {
       removeMessageFromLocalChat(message?._id);
 
       setOpenMessageMenu(null);
-
       return;
     }
 
-    if (String(message.senderId) !== currentUserId) {
+    if (!isMessageSentByCurrentUser(message)) {
       return;
     }
 
@@ -2021,10 +1721,6 @@ function Chat() {
   // MESSAGE SELECTION
   // =====================================================
 
-  const isMessageSentByCurrentUser = (message) =>
-    String(message?.senderId || "") === currentUserId ||
-    message?.type === "sent";
-
   const toggleMessageSelection = (messageId) => {
     const id = String(messageId || "");
 
@@ -2032,8 +1728,10 @@ function Chat() {
       return;
     }
 
-    setSelectedMessageIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    setSelectedMessageIds((previous) =>
+      previous.includes(id)
+        ? previous.filter((item) => item !== id)
+        : [...previous, id],
     );
   };
 
@@ -2096,17 +1794,15 @@ function Chat() {
         });
       }
 
-      setMessagesByChat((prev) => ({
-        ...prev,
-        [activeChatId]: (prev[activeChatId] || []).filter(
+      setMessagesByChat((previous) => ({
+        ...previous,
+        [activeChatId]: (previous[activeChatId] || []).filter(
           (message) => !selectedIds.includes(String(message._id)),
         ),
       }));
 
       setSelectedMessageIds([]);
-
       setSelectionMode(false);
-
       setOpenMessageMenu(null);
     } catch (error) {
       console.error("Bulk message delete failed:", error);
@@ -2141,13 +1837,13 @@ function Chat() {
         `/messages/conversation/${selectedUser.conversationId}/clear`,
       );
 
-      setMessagesByChat((prev) => ({
-        ...prev,
+      setMessagesByChat((previous) => ({
+        ...previous,
         [activeChatId]: [],
       }));
 
-      setPaginationByChat((prev) => ({
-        ...prev,
+      setPaginationByChat((previous) => ({
+        ...previous,
         [activeChatId]: {
           hasMore: false,
           nextCursor: null,
@@ -2163,9 +1859,7 @@ function Chat() {
       }));
 
       setSelectedMessageIds([]);
-
       setSelectionMode(false);
-
       setTopMenuOpen(false);
     } catch (error) {
       console.error("Clear chat failed:", error);
@@ -2185,10 +1879,10 @@ function Chat() {
       return;
     }
 
-    setMessagesByChat((prev) => {
+    setMessagesByChat((previous) => {
       const next = {};
 
-      Object.entries(prev).forEach(([chatId, messages]) => {
+      Object.entries(previous).forEach(([chatId, messages]) => {
         next[chatId] = messages.filter(
           (message) => String(message._id) !== String(messageId),
         );
@@ -2205,14 +1899,65 @@ function Chat() {
   }, [handleMessageDeleted]);
 
   // =====================================================
+  // MESSAGE STATUS TICKS
+  // =====================================================
+
+  const MessageStatusTicks = ({ message }) => {
+    if (!isMessageSentByCurrentUser(message)) {
+      return null;
+    }
+
+    const status = message?.status || "sent";
+
+    if (status === "read") {
+      return (
+        <span
+          className="ml-1 inline-flex items-center text-[10px] font-semibold"
+          title="Read"
+          aria-label="Read"
+        >
+          <span className="text-gray-300">✓</span>
+
+          <span className="text-[#38BDF8]">✓</span>
+        </span>
+      );
+    }
+
+    if (status === "delivered") {
+      return (
+        <span
+          className="ml-1 inline-flex items-center text-[10px] font-semibold text-gray-300"
+          title="Delivered"
+          aria-label="Delivered"
+        >
+          ✓✓
+        </span>
+      );
+    }
+
+    return (
+      <span
+        className="ml-1 text-[10px] font-semibold text-white"
+        title="Sent"
+        aria-label="Sent"
+      >
+        ✓
+      </span>
+    );
+  };
+
+  // =====================================================
   // UI
   // =====================================================
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#F7F8FC]">
-      <Sidebar />
+    <div className="flex h-screen min-h-0 overflow-hidden bg-[#F7F8FC]">
+      {/* DESKTOP SIDEBAR */}
+      <div className="shrink-0 lg:block">
+        <Sidebar />
+      </div>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 min-h-0 flex-1 flex-col">
         <Navbar />
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -2220,288 +1965,348 @@ function Chat() {
           {/* LEFT CHAT LIST */}
           {/* ================================================= */}
 
-          <aside className="flex w-[300px] shrink-0 flex-col border-r border-gray-200 bg-white">
-            <div className="border-b border-gray-200 p-5">
-              <div className="flex items-center rounded-xl bg-[#F5F7FB] px-4 py-3">
-                <FiSearch className="text-gray-400" />
+          <aside
+            className={`${
+              mobileChatOpen ? "hidden md:flex" : "flex"
+            } w-full shrink-0 flex-col border-r border-gray-200 bg-white md:w-[280px] lg:w-[320px] xl:w-[320px]`}
+          >
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {activeNavTab === "chat" && (
+                <>
+                  <div className="border-b border-gray-200 p-3 sm:p-4">
+                    <div className="flex items-center rounded-xl bg-[#F5F7FB] px-3 py-2.5 sm:px-4 sm:py-3">
+                      <FiSearch className="shrink-0 text-gray-400" />
 
-                <input
-                  ref={chatSearchInputRef}
-                  type="text"
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  placeholder="Search users or conversations..."
-                  className="ml-3 min-w-0 flex-1 bg-transparent text-xs outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {/* FRIEND REQUESTS */}
-
-              {friendRequests.length > 0 && (
-                <div className="border-b border-gray-200 px-4 py-3">
-                  <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wide text-gray-500">
-                    Friend Requests
-                  </h3>
-
-                  {friendRequests.map((request) => {
-                    const requester = request.requester;
-
-                    const isLoading =
-                      friendActionState[request._id] === "loading";
-
-                    return (
-                      <div
-                        key={request._id}
-                        className="mb-2 flex items-center gap-2 last:mb-0"
-                      >
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-[10px] font-semibold text-gray-700">
-                          {getInitials(
-                            requester.name ||
-                              requester.username ||
-                              requester.email,
-                          )}
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[11px] font-semibold text-gray-900">
-                            {requester.name ||
-                              requester.username ||
-                              requester.email}
-                          </p>
-
-                          <p className="text-[9px] text-gray-500">
-                            Wants to connect
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          disabled={isLoading}
-                          onClick={() =>
-                            respondToFriendRequest(request._id, "accept")
-                          }
-                          className="text-green-600 hover:text-green-800 disabled:opacity-50"
-                          aria-label="Accept friend request"
-                        >
-                          <FiCheck size={15} />
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={isLoading}
-                          onClick={() =>
-                            respondToFriendRequest(request._id, "reject")
-                          }
-                          className="text-red-500 hover:text-red-700 disabled:opacity-50"
-                          aria-label="Reject friend request"
-                        >
-                          <FiX size={15} />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* SEARCH RESULTS */}
-
-              {userSearchResults.length > 0 && (
-                <div className="border-b border-gray-200 px-4 py-3">
-                  <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wide text-gray-500">
-                    Search Results
-                  </h3>
-
-                  {userSearchResults.map((user) => {
-                    const userId = String(user._id);
-
-                    const isLoading = friendActionState[userId] === "loading";
-
-                    const status = user.status || "Add Friend";
-
-                    return (
-                      <div
-                        key={userId}
-                        className="mb-2 flex items-center gap-2 last:mb-0"
-                      >
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-[10px] font-semibold text-gray-700">
-                          {getInitials(
-                            user.name || user.username || user.email,
-                          )}
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[11px] font-semibold text-gray-900">
-                            {user.name || user.username || user.email}
-                          </p>
-
-                          <p className="truncate text-[9px] text-gray-500">
-                            {status}
-                          </p>
-                        </div>
-
-                        {status === "Add Friend" && (
-                          <button
-                            type="button"
-                            disabled={isLoading}
-                            onClick={() => sendFriendRequest(user)}
-                            className="text-blue-600 hover:text-blue-800 disabled:opacity-50"
-                            aria-label="Send friend request"
-                          >
-                            <FiUserPlus size={15} />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* CHAT LIST */}
-
-              {visibleChats.map((chat) => {
-                const unreadCount = Number(
-                  unreadCounts[chat.chatKey] ??
-                    unreadCounts[chat.conversationId] ??
-                    unreadCounts[chat.id] ??
-                    chat.unreadCount ??
-                    0,
-                );
-
-                return (
-                  <div
-                    key={chat.id}
-                    onClick={() => openChat(chat)}
-                    className={`cursor-pointer border-b border-gray-100 px-4 py-3 transition ${
-                      selectedChatId === chat.id
-                        ? "border-l-4 border-l-blue-600 bg-blue-50"
-                        : "hover:bg-gray-50"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="relative shrink-0">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-700">
-                          {chat.avatar}
-                        </div>
-
-                        {chat.online && (
-                          <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-green-500" />
-                        )}
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex min-w-0 flex-1 items-center gap-2">
-                            <h3 className="min-w-0 truncate text-[12px] font-semibold text-gray-900">
-                              {chat.name}
-                            </h3>
-
-                            {unreadCount > 0 && (
-                              <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 px-1.5 text-[9px] font-semibold leading-none text-white">
-                                {unreadCount > 99 ? "99+" : unreadCount}
-                              </span>
-                            )}
-                          </div>
-
-                          <span className="shrink-0 text-[9px] text-gray-400">
-                            {chat.time}
-                          </span>
-                        </div>
-
-                        <p className="mt-1 truncate text-[10px] text-gray-500">
-                          {typingByChat[chat.chatKey] ? (
-                            <span className="font-medium text-blue-600">
-                              typing...
-                            </span>
-                          ) : (
-                            messagesByChat[chat.chatKey]?.at(-1)?.text ||
-                            chat.message
-                          )}
-                        </p>
-                      </div>
+                      <input
+                        ref={chatSearchInputRef}
+                        type="text"
+                        value={searchText}
+                        onChange={(e) => setSearchText(e.target.value)}
+                        placeholder="Search users or conversations..."
+                        className="ml-2 min-w-0 flex-1 bg-transparent text-xs outline-none sm:ml-3"
+                      />
                     </div>
                   </div>
-                );
-              })}
+
+                  <div className="min-h-0 flex-1 overflow-y-auto">
+                    {/* FRIEND REQUESTS */}
+
+                    {friendRequests.length > 0 && (
+                      <div className="border-b border-gray-200 px-3 py-3 sm:px-4">
+                        <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wide text-gray-500">
+                          Friend Requests
+                        </h3>
+
+                        {friendRequests.map((request) => {
+                          const requester = request.requester;
+
+                          const isLoading =
+                            friendActionState[request._id] === "loading";
+
+                          return (
+                            <div
+                              key={request._id}
+                              className="mb-2 flex min-w-0 items-center gap-2 last:mb-0"
+                            >
+                              <Avatar
+                                user={requester}
+                                size={32}
+                                showOnline={false}
+                              />
+
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-[11px] font-semibold text-gray-900">
+                                  {requester.name ||
+                                    requester.username ||
+                                    requester.email}
+                                </p>
+
+                                <p className="truncate text-[9px] text-gray-500">
+                                  Wants to connect
+                                </p>
+                              </div>
+
+                              <button
+                                type="button"
+                                disabled={isLoading}
+                                onClick={() =>
+                                  respondToFriendRequest(request._id, "accept")
+                                }
+                                className="shrink-0 text-green-600 hover:text-green-800 disabled:opacity-50"
+                                aria-label="Accept friend request"
+                              >
+                                <FiCheck size={15} />
+                              </button>
+
+                              <button
+                                type="button"
+                                disabled={isLoading}
+                                onClick={() =>
+                                  respondToFriendRequest(request._id, "reject")
+                                }
+                                className="shrink-0 text-red-500 hover:text-red-700 disabled:opacity-50"
+                                aria-label="Reject friend request"
+                              >
+                                <FiX size={15} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* SEARCH RESULTS */}
+
+                    {userSearchResults.length > 0 && (
+                      <div className="border-b border-gray-200 px-3 py-3 sm:px-4">
+                        <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wide text-gray-500">
+                          Search Results
+                        </h3>
+
+                        {userSearchResults.map((user) => {
+                          const userId = String(user._id);
+
+                          const isLoading =
+                            friendActionState[userId] === "loading";
+
+                          const status = user.status || "Add Friend";
+
+                          return (
+                            <div
+                              key={userId}
+                              className="mb-2 flex min-w-0 items-center gap-2 last:mb-0"
+                            >
+                              <Avatar
+                                user={user}
+                                size={32}
+                                showOnline={false}
+                              />
+
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-[11px] font-semibold text-gray-900">
+                                  {user.name || user.username || user.email}
+                                </p>
+
+                                <p className="truncate text-[9px] text-gray-500">
+                                  {status}
+                                </p>
+                              </div>
+
+                              {status === "Add Friend" && (
+                                <button
+                                  type="button"
+                                  disabled={isLoading}
+                                  onClick={() => sendFriendRequest(user)}
+                                  className="shrink-0 text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                                  aria-label="Send friend request"
+                                >
+                                  <FiUserPlus size={15} />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* CHAT LIST */}
+
+                    {visibleChats.map((chat) => {
+                      const unreadCount = Number(
+                        unreadCounts[chat.chatKey] ??
+                          unreadCounts[chat.conversationId] ??
+                          unreadCounts[chat.id] ??
+                          chat.unreadCount ??
+                          0,
+                      );
+
+                      return (
+                        <div
+                          key={chat.id}
+                          onClick={() => openChat(chat)}
+                          className={`cursor-pointer border-b border-gray-100 px-3 py-3 transition sm:px-4 ${
+                            selectedChatId === chat.id
+                              ? "border-l-4 border-l-blue-600 bg-blue-50"
+                              : "hover:bg-gray-50"
+                          }`}
+                        >
+                          <div className="flex min-w-0 items-center gap-3">
+                            <Avatar
+                              user={{ name: chat.name, avatar: chat.avatar }}
+                              size={40}
+                              showOnline={chat.online}
+                            />
+
+                            <div className="min-w-0 flex-1">
+                              <div className="flex min-w-0 items-center justify-between gap-2">
+                                <div className="flex min-w-0 flex-1 items-center gap-2">
+                                  <h3 className="min-w-0 truncate text-[12px] font-semibold text-gray-900">
+                                    {chat.name}
+                                  </h3>
+
+                                  {unreadCount > 0 && (
+                                    <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 px-1.5 text-[9px] font-semibold leading-none text-white">
+                                      {unreadCount > 99 ? "99+" : unreadCount}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <span className="shrink-0 text-[9px] text-gray-400">
+                                  {chat.time}
+                                </span>
+                              </div>
+
+                              <p className="mt-1 truncate text-[10px] text-gray-500">
+                                {typingByChat[chat.chatKey] ? (
+                                  <span className="font-medium text-blue-600">
+                                    typing...
+                                  </span>
+                                ) : (
+                                  messagesByChat[chat.chatKey]?.at(-1)?.text ||
+                                  chat.message
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {activeNavTab === "groups" && (
+                <GroupSection
+                  currentUser={currentUser}
+                  onSelectGroup={handleSelectGroup}
+                  selectedGroupId={selectedGroup?._id}
+                  socket={socket}
+                />
+              )}
+
+              {activeNavTab === "status" && (
+                <StatusSection
+                  currentUser={currentUser}
+                  onOpenDirectChat={openChat}
+                />
+              )}
+
+              {activeNavTab === "calls" && (
+                <CallsSection
+                  currentUser={currentUser}
+                  onStartCall={handleStartCall}
+                  friends={friendsList}
+                />
+              )}
             </div>
+
+            {/* FIXED BOTTOM NAVIGATION */}
+            <BottomNav
+              activeTab={activeNavTab}
+              onSelectTab={setActiveNavTab}
+              unreadChatCount={Object.values(unreadCounts).reduce(
+                (a, b) => a + Number(b || 0),
+                0,
+              )}
+            />
           </aside>
 
           {/* ================================================= */}
-          {/* CENTER */}
+          {/* CENTER CHAT */}
           {/* ================================================= */}
 
-          <main className="flex min-w-0 flex-1 flex-col bg-white">
+          <main
+            className={`${
+              mobileChatOpen ? "flex" : "hidden md:flex"
+            } min-w-0 min-h-0 flex-1 flex-col bg-white`}
+          >
             {/* HEADER */}
 
-            <div className="relative flex h-[56px] shrink-0 items-center justify-between border-b border-gray-200 px-4">
+            <div className="relative flex min-h-[56px] shrink-0 items-center justify-between gap-2 border-b border-gray-200 px-3 sm:px-4">
               {selectionMode ? (
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                   <button
                     type="button"
                     onClick={exitSelectionMode}
-                    className="text-gray-500 hover:text-gray-800"
+                    className="shrink-0 text-gray-500 hover:text-gray-800"
                     aria-label="Exit message selection"
                   >
                     <FiX />
                   </button>
 
-                  <h2 className="text-[13px] font-semibold text-gray-900">
+                  <h2 className="truncate text-[13px] font-semibold text-gray-900">
                     {selectedMessageIds.length} selected
                   </h2>
                 </div>
               ) : (
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-[10px] font-semibold text-blue-700">
-                      {selectedUser?.avatar || "U"}
-                    </div>
+                <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+                  <button
+                    type="button"
+                    onClick={closeMobileChat}
+                    className="shrink-0 text-gray-500 hover:text-gray-800 md:hidden"
+                    aria-label="Back to chats"
+                  >
+                    <FiArrowLeft size={19} />
+                  </button>
 
-                    {selectedUser?.online && (
-                      <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-green-500" />
-                    )}
-                  </div>
+                  <Avatar
+                    user={selectedUser}
+                    size={34}
+                    showOnline={!selectedUser?.isGroup && selectedUser?.online}
+                  />
 
-                  <div>
-                    <h2 className="text-[13px] font-semibold text-gray-900">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-[13px] font-semibold text-gray-900">
                       {selectedUser?.name || "Select a conversation"}
                     </h2>
 
                     <p
-                      className={`text-[9px] ${
-                        selectedUserIsTyping
+                      className={`truncate text-[9px] ${
+                        typingByChat[activeChatId]
                           ? "font-medium text-blue-600"
                           : selectedUser?.online
                             ? "text-green-600"
                             : "text-gray-400"
                       }`}
                     >
-                      {selectedUserIsTyping
-                        ? "typing..."
-                        : selectedUser
-                          ? selectedUser.online
-                            ? "Online"
-                            : "Offline"
-                          : ""}
+                      {selectedUser?.isGroup
+                        ? `${selectedUser.groupData?.members?.length || 0} members`
+                        : typingByChat[activeChatId]
+                          ? "typing..."
+                          : selectedUser
+                            ? selectedUser.online
+                              ? "Online"
+                              : "Offline"
+                            : ""}
                     </p>
                   </div>
                 </div>
               )}
 
-              <div className="flex items-center gap-4 text-sm text-gray-500">
-                {!selectionMode && (
+              <div className="flex shrink-0 items-center gap-3 text-sm text-gray-500 sm:gap-4">
+                {!selectionMode && selectedUser && (
                   <>
-                    <button type="button" className="hover:text-blue-600">
+                    <button
+                      type="button"
+                      onClick={() => handleStartCall(selectedUser, "voice")}
+                      className="hidden hover:text-blue-600 sm:block"
+                      aria-label="Call"
+                    >
                       <FiPhone />
                     </button>
 
-                    <button type="button" className="hover:text-blue-600">
+                    <button
+                      type="button"
+                      onClick={() => handleStartCall(selectedUser, "video")}
+                      className="hidden hover:text-blue-600 sm:block"
+                      aria-label="Video call"
+                    >
                       <FiVideo />
                     </button>
 
                     <button
                       type="button"
-                      onClick={() => setTopMenuOpen((prev) => !prev)}
+                      onClick={() => setTopMenuOpen((previous) => !previous)}
                       className="hover:text-blue-600"
                       aria-label="Chat options"
                     >
@@ -2511,10 +2316,10 @@ function Chat() {
                 )}
               </div>
 
-              {/* TOP CHAT MENU */}
+              {/* TOP MENU */}
 
               {!selectionMode && topMenuOpen && selectedUser && (
-                <div className="absolute right-3 top-12 z-40 w-40 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg">
+                <div className="absolute right-2 top-12 z-40 w-40 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg sm:right-3">
                   <button
                     type="button"
                     onClick={() => {
@@ -2556,7 +2361,7 @@ function Chat() {
             <div
               ref={messagesContainerRef}
               onScroll={handleMessagesScroll}
-              className="min-h-0 flex-1 overflow-y-auto bg-[#F7F8FC] px-7 py-5"
+              className="min-h-0 flex-1 overflow-y-auto bg-[#F7F8FC] px-3 py-4 sm:px-5 sm:py-5 lg:px-7"
             >
               {paginationByChat[activeChatId]?.loading && (
                 <div className="mb-3 text-center text-[10px] text-gray-400">
@@ -2601,7 +2406,7 @@ function Chat() {
                           previous === messageId ? null : messageId,
                         )
                       }
-                      className="rounded-full p-1 text-gray-400 opacity-0 transition group-hover:opacity-100 hover:bg-gray-100 hover:text-gray-700 focus:opacity-100"
+                      className="rounded-full p-1 text-gray-400 opacity-100 transition hover:bg-gray-100 hover:text-gray-700 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100"
                       aria-label="Message options"
                     >
                       <FiMoreVertical size={14} />
@@ -2633,9 +2438,7 @@ function Chat() {
                   </div>
                 ) : null;
 
-                // =================================================
                 // RECEIVED TEXT
-                // =================================================
 
                 if (msg.type === "received") {
                   return (
@@ -2645,7 +2448,7 @@ function Chat() {
                     >
                       {selectionControl}
 
-                      <div className="min-w-0 max-w-[75%] rounded-xl rounded-tl-md border border-gray-200 bg-white px-4 py-3 shadow-sm">
+                      <div className="min-w-0 max-w-[88%] rounded-xl rounded-tl-md border border-gray-200 bg-white px-3 py-2.5 shadow-sm sm:max-w-[75%] sm:px-4 sm:py-3">
                         <p className="min-w-0 break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-[12px] leading-5">
                           {msg.text}
                         </p>
@@ -2660,9 +2463,7 @@ function Chat() {
                   );
                 }
 
-                // =================================================
                 // SENT TEXT
-                // =================================================
 
                 if (msg.type === "sent") {
                   return (
@@ -2670,7 +2471,7 @@ function Chat() {
                       key={`${msg._id || index}-${msg.time}`}
                       className="group mb-4 flex min-w-0 items-start justify-end gap-2"
                     >
-                      <div className="min-w-0 max-w-[75%] rounded-xl rounded-br-md bg-blue-600 px-4 py-3 text-white">
+                      <div className="min-w-0 max-w-[88%] rounded-xl rounded-br-md bg-blue-600 px-3 py-2.5 text-white sm:max-w-[75%] sm:px-4 sm:py-3">
                         <p className="min-w-0 break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-[12px] leading-5">
                           {msg.text}
                         </p>
@@ -2691,19 +2492,17 @@ function Chat() {
                   );
                 }
 
-                // =================================================
                 // VOICE
-                // =================================================
 
                 if (msg.type === "voice") {
                   return (
                     <div
                       key={`${msg._id || index}-${msg.time}`}
-                      className="group mb-4 flex items-start gap-2"
+                      className="group mb-4 flex min-w-0 items-start gap-2"
                     >
                       {selectionControl}
 
-                      <div className="flex w-[250px] items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+                      <div className="flex w-full max-w-[250px] min-w-0 items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-3 shadow-sm sm:px-4">
                         <button
                           type="button"
                           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"
@@ -2711,13 +2510,13 @@ function Chat() {
                           <FiPlay size={14} />
                         </button>
 
-                        <div className="flex-1">
+                        <div className="min-w-0 flex-1">
                           <div className="h-1.5 rounded-full bg-gray-200">
                             <div className="h-1.5 w-[55%] rounded-full bg-blue-500" />
                           </div>
                         </div>
 
-                        <span className="text-[11px] text-gray-500">
+                        <span className="shrink-0 text-[11px] text-gray-500">
                           {msg.duration}
                         </span>
                       </div>
@@ -2727,9 +2526,7 @@ function Chat() {
                   );
                 }
 
-                // =================================================
                 // FILE
-                // =================================================
 
                 if (msg.type === "file") {
                   const fileName = msg.attachment?.name || msg.file || msg.text;
@@ -2749,13 +2546,13 @@ function Chat() {
                     >
                       {!isSent && selectionControl}
 
-                      <div className="min-w-0 max-w-[75%] rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-                        <div className="flex min-w-0 items-center gap-3">
+                      <div className="min-w-0 max-w-[92%] rounded-xl border border-gray-200 bg-white px-3 py-3 shadow-sm sm:max-w-[75%] sm:px-4">
+                        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                           {attachmentType === "image" && previewUrl ? (
                             <button
                               type="button"
                               onClick={() => previewSharedFile(msg)}
-                              className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-gray-100"
+                              className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100 sm:h-16 sm:w-16"
                               aria-label={`Preview ${fileName}`}
                             >
                               <img
@@ -2768,7 +2565,7 @@ function Chat() {
                             <button
                               type="button"
                               onClick={() => previewSharedFile(msg)}
-                              className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-gray-100"
+                              className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100 sm:h-16 sm:w-16"
                               aria-label={`Preview ${fileName}`}
                             >
                               <video
@@ -2905,102 +2702,122 @@ function Chat() {
                     </div>
                   )}
 
-                  <div className="relative flex items-center gap-2 rounded-xl border border-gray-100 bg-[#F5F7FB] px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="text-gray-500 hover:text-blue-600"
-                    >
-                      <FiPaperclip size={18} />
-                    </button>
+                  {selectedUser?.isGroup &&
+                  selectedUser.groupData?.permissions?.sendMessages ===
+                    "admins" &&
+                  !(
+                    String(
+                      selectedUser.groupData.owner?._id ||
+                        selectedUser.groupData.owner,
+                    ) === currentUserId ||
+                    selectedUser.groupData.members?.some(
+                      (m) =>
+                        String(m.userId?._id || m.userId?.id || m.userId) ===
+                          currentUserId &&
+                        (m.role === "admin" || m.role === "owner"),
+                    )
+                  ) ? (
+                    <div className="flex h-11 items-center justify-center rounded-xl bg-gray-100 px-4 text-center text-xs font-medium text-gray-500">
+                      Only group admins can send messages in this group.
+                    </div>
+                  ) : (
+                    <div className="relative flex items-center gap-2 rounded-xl border border-gray-100 bg-[#F5F7FB] px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="text-gray-500 hover:text-blue-600"
+                      >
+                        <FiPaperclip size={18} />
+                      </button>
 
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar,.7z,.tar,.gz"
-                      className="hidden"
-                      onChange={handleFileChange}
-                    />
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar,.7z,.tar,.gz"
+                        className="hidden"
+                        onChange={handleFileChange}
+                      />
 
-                    <input
-                      type="text"
-                      value={messageText}
-                      onChange={(e) => handleTyping(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          sendMessage();
+                      <input
+                        type="text"
+                        value={messageText}
+                        onChange={(e) => handleTyping(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            sendMessage();
+                          }
+                        }}
+                        placeholder={`Message ${
+                          selectedUser?.name || "this conversation"
+                        }...`}
+                        className="min-w-0 flex-1 bg-transparent text-xs outline-none"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => setShowEmoji((prev) => !prev)}
+                        className="text-gray-500 hover:text-yellow-500"
+                      >
+                        <FiSmile size={18} />
+                      </button>
+
+                      {showEmoji && (
+                        <div className="absolute bottom-14 right-16 z-20 grid w-48 grid-cols-6 gap-2 rounded-xl border border-gray-200 bg-white p-3 shadow-lg">
+                          {[
+                            "😀",
+                            "😂",
+                            "😍",
+                            "👍",
+                            "❤️",
+                            "🎉",
+                            "🔥",
+                            "👏",
+                            "😊",
+                            "😎",
+                            "🙌",
+                            "✅",
+                          ].map((emoji) => (
+                            <button
+                              key={emoji}
+                              type="button"
+                              onClick={() => {
+                                handleTyping(`${messageText}${emoji}`);
+
+                                setShowEmoji(false);
+                              }}
+                              className="text-lg"
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setIsRecording((prev) => !prev)}
+                        className={
+                          isRecording
+                            ? "text-red-500"
+                            : "text-gray-500 hover:text-red-500"
                         }
-                      }}
-                      placeholder={`Message ${
-                        selectedUser?.name || "this conversation"
-                      }...`}
-                      className="min-w-0 flex-1 bg-transparent text-xs outline-none"
-                    />
+                      >
+                        <FiMic size={18} />
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() => setShowEmoji((prev) => !prev)}
-                      className="text-gray-500 hover:text-yellow-500"
-                    >
-                      <FiSmile size={18} />
-                    </button>
-
-                    {showEmoji && (
-                      <div className="absolute bottom-14 right-16 z-20 grid w-48 grid-cols-6 gap-2 rounded-xl border border-gray-200 bg-white p-3 shadow-lg">
-                        {[
-                          "😀",
-                          "😂",
-                          "😍",
-                          "👍",
-                          "❤️",
-                          "🎉",
-                          "🔥",
-                          "👏",
-                          "😊",
-                          "😎",
-                          "🙌",
-                          "✅",
-                        ].map((emoji) => (
-                          <button
-                            key={emoji}
-                            type="button"
-                            onClick={() => {
-                              handleTyping(`${messageText}${emoji}`);
-
-                              setShowEmoji(false);
-                            }}
-                            className="text-lg"
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => setIsRecording((prev) => !prev)}
-                      className={
-                        isRecording
-                          ? "text-red-500"
-                          : "text-gray-500 hover:text-red-500"
-                      }
-                    >
-                      <FiMic size={18} />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={sendMessage}
-                      disabled={
-                        !selectedUser || !messageText.trim() || !isConnected
-                      }
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white transition hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      <FiSend size={16} />
-                    </button>
-                  </div>
+                      <button
+                        type="button"
+                        onClick={sendMessage}
+                        disabled={
+                          !selectedUser || !messageText.trim() || !isConnected
+                        }
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white transition hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        <FiSend size={16} />
+                      </button>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -3010,7 +2827,7 @@ function Chat() {
           {/* RIGHT SIDEBAR */}
           {/* ================================================= */}
 
-          <aside className="w-[280px] shrink-0 overflow-y-auto border-l border-gray-200 bg-white">
+          <aside className="hidden w-[280px] shrink-0 overflow-y-auto border-l border-gray-200 bg-white xl:block">
             <div className="border-b border-gray-200 p-4">
               <h2 className="text-[14px] font-semibold text-gray-900">
                 Shared Media
@@ -3100,7 +2917,7 @@ function Chat() {
                 .map((file) => (
                   <div
                     key={file.fileId}
-                    className="flex items-center gap-3 border-b border-gray-200 py-3"
+                    className="flex min-w-0 items-center gap-3 border-b border-gray-200 py-3"
                   >
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50">
                       <FiFileText className="text-blue-600" size={15} />
@@ -3109,7 +2926,7 @@ function Chat() {
                     <button
                       type="button"
                       onClick={() => previewSharedFile(file)}
-                      className="min-w-0 text-left"
+                      className="min-w-0 flex-1 text-left"
                       aria-label={`Preview ${file.name}`}
                     >
                       <h4 className="truncate text-[10px] font-medium">
@@ -3125,7 +2942,7 @@ function Chat() {
                       <button
                         type="button"
                         onClick={() => downloadSharedFile(file)}
-                        className="ml-auto text-blue-600 hover:text-blue-800"
+                        className="ml-auto shrink-0 text-blue-600 hover:text-blue-800"
                         aria-label={`Download ${file.name}`}
                       >
                         <FiDownload size={14} />
@@ -3137,6 +2954,13 @@ function Chat() {
           </aside>
         </div>
       </div>
+
+      {/* WebRTC Calling Modal & Overlay */}
+      <CallingOverlay
+        ref={callingOverlayRef}
+        socket={socket}
+        currentUser={currentUser}
+      />
     </div>
   );
 }

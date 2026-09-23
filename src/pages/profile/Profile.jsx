@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   FiLock,
   FiEdit2,
@@ -7,11 +7,14 @@ import {
   FiHardDrive,
   FiDownload,
   FiFileText,
+  FiCamera,
+  FiTrash2,
 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 
 import Sidebar from "../../components/layout/Sidebar";
 import Navbar from "../../components/layout/Navbar";
+import Avatar from "../../components/common/Avatar";
 import api from "../../api/interceptors";
 
 const formatStorage = (bytes = 0) => {
@@ -78,6 +81,7 @@ const getUserId = () => {
 
 function Profile() {
   const navigate = useNavigate();
+  const avatarInputRef = useRef(null);
 
   const [user, setUser] = useState(null);
   const [fileStats, setFileStats] = useState({
@@ -90,8 +94,71 @@ function Profile() {
   const [loadingUser, setLoadingUser] = useState(true);
   const [loadingFiles, setLoadingFiles] = useState(true);
   const [loadingShared, setLoadingShared] = useState(true);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const [error, setError] = useState("");
+
+  const handleAvatarFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("image", file);
+
+    setUploadingAvatar(true);
+    setError("");
+
+    try {
+      const response = await api.post("/auth/profile-photo", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      const updatedUser = response.data?.user;
+      if (updatedUser) {
+        setUser(updatedUser);
+        const currentStoredUser = JSON.parse(
+          localStorage.getItem("user") || "{}",
+        );
+        localStorage.setItem(
+          "user",
+          JSON.stringify({ ...currentStoredUser, ...updatedUser }),
+        );
+        window.dispatchEvent(new Event("userUpdated"));
+      }
+    } catch (err) {
+      console.error("Upload avatar error:", err);
+      setError(err.response?.data?.message || "Failed to upload profile photo");
+    } finally {
+      setUploadingAvatar(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+    }
+  };
+
+  const handleAvatarRemove = async () => {
+    if (!window.confirm("Remove your profile photo?")) return;
+
+    setUploadingAvatar(true);
+    try {
+      const response = await api.delete("/auth/profile-photo");
+      const updatedUser = response.data?.user;
+      if (updatedUser) {
+        setUser(updatedUser);
+        const currentStoredUser = JSON.parse(
+          localStorage.getItem("user") || "{}",
+        );
+        localStorage.setItem(
+          "user",
+          JSON.stringify({ ...currentStoredUser, ...updatedUser }),
+        );
+        window.dispatchEvent(new Event("userUpdated"));
+      }
+    } catch (err) {
+      console.error("Remove avatar error:", err);
+      setError(err.response?.data?.message || "Failed to remove profile photo");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   // =====================================================
   // LOAD PROFILE
@@ -308,14 +375,49 @@ function Profile() {
 
               <div className="relative flex min-h-[73px] flex-col items-start justify-between gap-4 px-4 pb-4 pt-3 sm:px-5 md:flex-row md:items-center md:gap-3 md:pb-3">
                 <div className="flex min-w-0 w-full items-center gap-3">
-                  {/* AVATAR */}
+                  {/* AVATAR WITH UPLOAD */}
+                  <div className="relative -mt-[52px] shrink-0 sm:-mt-[67px]">
+                    <Avatar
+                      user={user}
+                      size="xl"
+                      previewable
+                      className="border-4 border-white shadow-md"
+                    />
 
-                  <div className="-mt-[52px] flex h-[64px] w-[64px] shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#edf3ff] text-[17px] font-semibold text-[#315eff] shadow-sm sm:-mt-[67px] sm:h-[72px] sm:w-[72px]">
-                    {loadingUser ? "..." : firstLetter}
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp"
+                      className="hidden"
+                      onChange={handleAvatarFileChange}
+                    />
+
+                    <button
+                      type="button"
+                      disabled={uploadingAvatar}
+                      onClick={() => avatarInputRef.current?.click()}
+                      className="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-blue-600 text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-50"
+                      title="Upload / Change profile photo"
+                      aria-label="Upload profile photo"
+                    >
+                      <FiCamera size={13} />
+                    </button>
+
+                    {user?.image && (
+                      <button
+                        type="button"
+                        disabled={uploadingAvatar}
+                        onClick={handleAvatarRemove}
+                        className="absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-red-500 text-white shadow-sm transition hover:bg-red-600 disabled:opacity-50"
+                        title="Remove profile photo"
+                        aria-label="Remove profile photo"
+                      >
+                        <FiTrash2 size={11} />
+                      </button>
+                    )}
                   </div>
 
                   {/* USER INFO */}
-
                   <div className="min-w-0">
                     <h2 className="truncate text-[14px] font-semibold leading-tight text-gray-900">
                       {loadingUser ? "Loading..." : displayName}

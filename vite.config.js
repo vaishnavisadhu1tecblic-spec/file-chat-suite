@@ -8,6 +8,6 @@ export default defineConfig({
 
   server: {
     host: "0.0.0.0",
-    allowedHosts: ["reviews-scene-alfred-temporary.trycloudflare.com"],
+    allowedHosts: true,
   },
 });

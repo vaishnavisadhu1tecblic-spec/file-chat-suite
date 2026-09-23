@@ -1,13 +1,9 @@
 import { FiBell, FiMenu, FiSearch } from "react-icons/fi";
 import useAuth from "../../hooks/useAuth";
+import Avatar from "../common/Avatar";
 
 function Navbar() {
   const { user } = useAuth();
-
-  const avatarLetter = (user?.name || user?.username || "U")
-    .trim()
-    .charAt(0)
-    .toUpperCase();
 
   const handleMenuClick = () => {
     window.dispatchEvent(new Event("syncspace:toggle-sidebar"));
@@ -49,15 +45,13 @@ function Navbar() {
       ===================================================== */}
 
       <div className="ml-3 flex shrink-0 items-center gap-3 sm:gap-5">
-        <button className="relative">
+        <button className="relative" aria-label="Notifications">
           <FiBell className="text-xl text-gray-500 sm:text-2xl" />
 
           <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500"></span>
         </button>
 
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 font-semibold text-white sm:h-10 sm:w-10">
-          {avatarLetter}
-        </div>
+        <Avatar user={user} size="sm" previewable />
       </div>
     </header>
   );

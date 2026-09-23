@@ -2,20 +2,41 @@ import { useEffect, useState } from "react";
 import { updateUser } from "../../api/authApi";
 import Sidebar from "../../components/layout/Sidebar";
 import Navbar from "../../components/layout/Navbar";
+import api from "../../api/interceptors";
+import {
+  FiUser,
+  FiBell,
+  FiShield,
+  FiHardDrive,
+  FiPhone,
+  FiMoon,
+  FiDownloadCloud,
+  FiUploadCloud,
+  FiTrash2,
+  FiCheckCircle,
+  FiRefreshCw,
+  FiClock,
+} from "react-icons/fi";
 
 const DEFAULT_USER = {
   name: "Alina Meyer",
   username: "alina",
   email: "alina@syncspace.io",
+  about: "Hey there! I am using SyncSpace.",
 };
 
 const DEFAULT_PREFERENCES = {
   emailNotifications: true,
   desktopNotifications: true,
+  callRingtone: true,
   sharedLinkExpiry: false,
+  readReceipts: true,
+  statusPrivacy: "contacts",
+  groupAddPrivacy: "contacts",
 };
 
 function Settings() {
+  const [activeTab, setActiveTab] = useState("account"); // 'account' | 'backup' | 'privacy' | 'notifications'
   const [formData, setFormData] = useState(DEFAULT_USER);
   const [preferences, setPreferences] = useState(DEFAULT_PREFERENCES);
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "light");
@@ -23,20 +44,33 @@ function Settings() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
+  // Chat Backup State
+  const [backupInfo, setBackupInfo] = useState(null);
+  const [loadingBackup, setLoadingBackup] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [backupMessage, setBackupMessage] = useState("");
+  const [backupError, setBackupError] = useState("");
+  const [backupConfig, setBackupConfig] = useState({
+    autoBackup: "weekly",
+    includePhotos: true,
+    includeVideos: true,
+    includeDocuments: true,
+  });
+
   useEffect(() => {
     try {
       const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
-
       const storedPreferences = JSON.parse(
-        localStorage.getItem("preferences") || "{}",
+        localStorage.getItem("preferences") || "{}"
       );
-
       const storedTheme = localStorage.getItem("theme") || "light";
 
       setFormData({
         name: storedUser?.name || storedUser?.username || DEFAULT_USER.name,
         username: storedUser?.username || DEFAULT_USER.username,
         email: storedUser?.email || DEFAULT_USER.email,
+        about: storedUser?.about || DEFAULT_USER.about,
       });
 
       setPreferences({
@@ -44,12 +78,40 @@ function Settings() {
         ...storedPreferences,
       });
 
+      if (storedUser?.backupSettings) {
+        setBackupConfig((prev) => ({
+          ...prev,
+          ...storedUser.backupSettings,
+        }));
+      }
+
       setTheme(storedTheme);
       document.documentElement.dataset.theme = storedTheme;
     } catch (error) {
       console.error("Load settings error:", error);
     }
+
+    // Fetch latest backup info
+    fetchBackupInfo();
   }, []);
+
+  const fetchBackupInfo = async () => {
+    try {
+      setLoadingBackup(true);
+      const res = await api.get("/backup/latest");
+      setBackupInfo(res.data?.backup || res.data?.latestBackup || null);
+      if (res.data?.settings || res.data?.backupSettings) {
+        setBackupConfig((prev) => ({
+          ...prev,
+          ...(res.data?.settings || res.data?.backupSettings),
+        }));
+      }
+    } catch (err) {
+      console.error("Failed to load backup info:", err);
+    } finally {
+      setLoadingBackup(false);
+    }
+  };
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -58,9 +120,7 @@ function Settings() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-
     setSaved(false);
-
     setFormData((prev) => ({
       ...prev,
       [name]: value,
@@ -69,8 +129,14 @@ function Settings() {
 
   const handleToggle = (name) => {
     setSaved(false);
-
     setPreferences((prev) => ({
+      ...prev,
+      [name]: !prev[name],
+    }));
+  };
+
+  const handleBackupToggle = (name) => {
+    setBackupConfig((prev) => ({
       ...prev,
       [name]: !prev[name],
     }));
@@ -80,10 +146,11 @@ function Settings() {
     setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"));
   };
 
+  // Save Account Changes
   const handleSave = async () => {
     try {
       const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
-      const userId = storedUser?._id;
+      const userId = storedUser?._id || storedUser?.id;
 
       if (!userId) {
         setSaveError("Your session is missing. Please log in again.");
@@ -95,6 +162,8 @@ function Settings() {
         name: formData.name.trim(),
         username: formData.username.trim(),
         email: formData.email.trim(),
+        about: formData.about.trim(),
+        backupSettings: backupConfig,
       };
 
       setIsSaving(true);
@@ -104,34 +173,112 @@ function Settings() {
         name: updatedUser.name,
         username: updatedUser.username,
         email: updatedUser.email,
+        about: updatedUser.about,
       });
+
+      // Also save backup preferences
+      await api.patch("/backup/settings", backupConfig).catch(() => {});
 
       localStorage.setItem(
         "user",
-        JSON.stringify(response.data?.user || updatedUser),
+        JSON.stringify(response.data?.user || updatedUser)
       );
-
       localStorage.setItem("preferences", JSON.stringify(preferences));
       localStorage.setItem("theme", theme);
 
       document.documentElement.dataset.theme = theme;
-
       window.dispatchEvent(new Event("userUpdated"));
 
       setSaved(true);
-
-      setTimeout(() => {
-        setSaved(false);
-      }, 2500);
+      setTimeout(() => setSaved(false), 2500);
     } catch (error) {
       console.error("Save settings error:", error);
-
       setSaveError(
         error.response?.data?.message ||
-          "Unable to save your account settings. Please try again.",
+          "Unable to save your account settings. Please try again."
       );
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Execute manual chat backup
+  const handleCreateBackup = async () => {
+    try {
+      setIsBackingUp(true);
+      setBackupMessage("");
+      setBackupError("");
+
+      const res = await api.post("/backup/create", {
+        includePhotos: backupConfig.includePhotos,
+        includeVideos: backupConfig.includeVideos,
+        includeDocs:
+          backupConfig.includeDocs !== undefined
+            ? backupConfig.includeDocs
+            : backupConfig.includeDocuments,
+        includeDocuments:
+          backupConfig.includeDocuments !== undefined
+            ? backupConfig.includeDocuments
+            : backupConfig.includeDocs,
+      });
+
+      setBackupInfo(res.data?.backup);
+      setBackupMessage("Backup completed successfully!");
+      setTimeout(() => setBackupMessage(""), 4000);
+    } catch (err) {
+      console.error("Create backup error:", err);
+      setBackupError(err.response?.data?.message || "Failed to create backup");
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  // Restore latest chat backup
+  const handleRestoreBackup = async () => {
+    if (
+      !window.confirm(
+        "Are you sure you want to restore from your latest backup? Existing conversations will be synchronized with the snapshot."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setIsRestoring(true);
+      setBackupMessage("");
+      setBackupError("");
+
+      const res = await api.post("/backup/restore");
+      setBackupMessage(res.data?.message || "Backup restored successfully!");
+      window.dispatchEvent(
+        new CustomEvent("syncspace:backup-restored", { detail: res.data })
+      );
+      window.dispatchEvent(new Event("syncspace:chat-updated"));
+      setTimeout(() => setBackupMessage(""), 5000);
+    } catch (err) {
+      console.error("Restore backup error:", err);
+      setBackupError(err.response?.data?.message || "Failed to restore backup");
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
+  // Delete Backup
+  const handleDeleteBackup = async () => {
+    if (!window.confirm("Are you sure you want to delete your cloud backup?")) {
+      return;
+    }
+
+    try {
+      await api.delete(
+        backupInfo?._id ? `/backup/${backupInfo._id}` : "/backup"
+      );
+      setBackupInfo(null);
+      setBackupMessage("Backup deleted.");
+      setTimeout(() => setBackupMessage(""), 3000);
+    } catch (err) {
+      console.error("Delete backup error:", err);
+      setBackupError(err.response?.data?.message || "Failed to delete backup");
     }
   };
 
@@ -143,201 +290,584 @@ function Settings() {
         <Navbar />
 
         <main className="flex-1 px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
-          <div className="mx-auto w-full max-w-[640px]">
+          <div className="mx-auto w-full max-w-[680px]">
             {/* Page Header */}
-
             <div className="mb-5">
               <h1 className="text-[22px] font-semibold leading-tight text-gray-900">
                 Settings
               </h1>
-
               <p className="mt-1 text-[11px] text-gray-500">
-                Manage your account and workspace preferences.
+                Manage your account, privacy, calls, notifications, and cloud backups.
               </p>
             </div>
 
-            {/* Account */}
+            {/* Navigation Tabs */}
+            <div className="mb-4 flex gap-1 rounded-2xl bg-white p-1.5 shadow-sm border border-gray-100">
+              <button
+                type="button"
+                onClick={() => setActiveTab("account")}
+                className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[11px] font-semibold transition ${
+                  activeTab === "account"
+                    ? "bg-[#315EFF] text-white shadow-sm"
+                    : "text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                <FiUser size={13} />
+                <span>Account</span>
+              </button>
 
-            <section className="rounded-[14px] border border-gray-200 bg-white px-4 py-4 shadow-sm">
-              <h2 className="mb-4 text-[13px] font-semibold text-gray-900">
-                Account
-              </h2>
+              <button
+                type="button"
+                onClick={() => setActiveTab("backup")}
+                className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[11px] font-semibold transition ${
+                  activeTab === "backup"
+                    ? "bg-[#315EFF] text-white shadow-sm"
+                    : "text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                <FiHardDrive size={13} />
+                <span>Chat Backup</span>
+              </button>
 
-              <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
-                {/* Full Name */}
+              <button
+                type="button"
+                onClick={() => setActiveTab("privacy")}
+                className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[11px] font-semibold transition ${
+                  activeTab === "privacy"
+                    ? "bg-[#315EFF] text-white shadow-sm"
+                    : "text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                <FiShield size={13} />
+                <span>Privacy</span>
+              </button>
 
-                <div>
-                  <label
-                    htmlFor="name"
-                    className="mb-1.5 block text-[10px] font-medium text-gray-900"
+              <button
+                type="button"
+                onClick={() => setActiveTab("notifications")}
+                className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[11px] font-semibold transition ${
+                  activeTab === "notifications"
+                    ? "bg-[#315EFF] text-white shadow-sm"
+                    : "text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                <FiBell size={13} />
+                <span>Preferences</span>
+              </button>
+            </div>
+
+            {/* 1. ACCOUNT TAB */}
+            {activeTab === "account" && (
+              <section className="rounded-[16px] border border-gray-200 bg-white px-5 py-5 shadow-sm">
+                <h2 className="mb-4 text-[13px] font-semibold text-gray-900">
+                  Account Details
+                </h2>
+
+                <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
+                  {/* Full Name */}
+                  <div>
+                    <label
+                      htmlFor="name"
+                      className="mb-1.5 block text-[10px] font-medium text-gray-900"
+                    >
+                      Full name
+                    </label>
+                    <input
+                      id="name"
+                      name="name"
+                      type="text"
+                      value={formData.name}
+                      onChange={handleChange}
+                      className="h-[32px] w-full rounded-[9px] border border-gray-200 bg-white px-3 text-[11px] text-gray-800 outline-none focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* Username */}
+                  <div>
+                    <label
+                      htmlFor="username"
+                      className="mb-1.5 block text-[10px] font-medium text-gray-900"
+                    >
+                      Username
+                    </label>
+                    <input
+                      id="username"
+                      name="username"
+                      type="text"
+                      value={formData.username}
+                      onChange={handleChange}
+                      className="h-[32px] w-full rounded-[9px] border border-gray-200 bg-white px-3 text-[11px] text-gray-800 outline-none focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* Email */}
+                  <div className="sm:col-span-2">
+                    <label
+                      htmlFor="email"
+                      className="mb-1.5 block text-[10px] font-medium text-gray-900"
+                    >
+                      Email
+                    </label>
+                    <input
+                      id="email"
+                      name="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={handleChange}
+                      className="h-[32px] w-full rounded-[9px] border border-gray-200 bg-white px-3 text-[11px] text-gray-800 outline-none focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* About / Bio */}
+                  <div className="sm:col-span-2">
+                    <label
+                      htmlFor="about"
+                      className="mb-1.5 block text-[10px] font-medium text-gray-900"
+                    >
+                      About / Status
+                    </label>
+                    <input
+                      id="about"
+                      name="about"
+                      type="text"
+                      value={formData.about}
+                      onChange={handleChange}
+                      placeholder="Hey there! I am using SyncSpace."
+                      className="h-[32px] w-full rounded-[9px] border border-gray-200 bg-white px-3 text-[11px] text-gray-800 outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Save Changes */}
+                <div className="mt-5 flex flex-col items-stretch gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-end">
+                  {saved && (
+                    <span className="flex items-center gap-1 text-[10px] font-semibold text-green-600">
+                      <FiCheckCircle /> Changes saved
+                    </span>
+                  )}
+
+                  {saveError && (
+                    <span className="break-words text-[10px] font-medium text-red-600 sm:max-w-[300px] sm:text-right">
+                      {saveError}
+                    </span>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    className="w-full rounded-[10px] bg-[#315EFF] px-5 py-2 text-[11px] font-semibold text-white shadow-sm hover:bg-[#2852e8] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                   >
-                    Full name
-                  </label>
+                    {isSaving ? "Saving..." : "Save changes"}
+                  </button>
+                </div>
+              </section>
+            )}
 
-                  <input
-                    id="name"
-                    name="name"
-                    type="text"
-                    value={formData.name}
-                    onChange={handleChange}
-                    className="h-[30px] w-full rounded-[9px] border border-gray-200 bg-white px-3 text-[10px] text-gray-800 outline-none focus:border-blue-500"
+            {/* 2. CHAT BACKUP TAB */}
+            {activeTab === "backup" && (
+              <div className="space-y-4">
+                {/* Backup Status Overview Card */}
+                <section className="rounded-[16px] border border-gray-200 bg-white p-5 shadow-sm">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3.5">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-[#315EFF]">
+                        <FiHardDrive size={24} />
+                      </div>
+                      <div>
+                        <h3 className="text-[14px] font-bold text-gray-900">
+                          Last Cloud Backup
+                        </h3>
+                        <p className="mt-0.5 text-[11px] text-gray-500">
+                          {backupInfo ? (
+                            <>
+                              <span>{formatDate(backupInfo.createdAt)}</span>
+                              <span className="mx-1.5">•</span>
+                              <span>
+                                {formatBytes(
+                                  backupInfo.totalSize || backupInfo.size
+                                )}
+                              </span>
+                            </>
+                          ) : (
+                            "No backups found for your account"
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    {backupInfo && (
+                      <button
+                        type="button"
+                        onClick={handleDeleteBackup}
+                        className="rounded-xl p-2 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                        title="Delete Backup"
+                      >
+                        <FiTrash2 size={16} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Backup Stats if Available */}
+                  {backupInfo && (
+                    <div className="mt-4 grid grid-cols-3 gap-3 rounded-xl bg-gray-50 p-3 text-center">
+                      <div>
+                        <p className="text-[9px] font-medium uppercase text-gray-400">
+                          Messages
+                        </p>
+                        <p className="mt-0.5 text-[13px] font-bold text-gray-800">
+                          {backupInfo.messagesCount ||
+                            backupInfo.messageCount ||
+                            0}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-medium uppercase text-gray-400">
+                          Media Files
+                        </p>
+                        <p className="mt-0.5 text-[13px] font-bold text-gray-800">
+                          {backupInfo.mediaCount || 0}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-medium uppercase text-gray-400">
+                          Status
+                        </p>
+                        <p className="mt-0.5 text-[13px] font-bold text-green-600">
+                          Secure
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Feedback Messages */}
+                  {backupMessage && (
+                    <div className="mt-3 rounded-xl bg-green-50 p-2.5 text-center text-[11px] font-semibold text-green-700">
+                      {backupMessage}
+                    </div>
+                  )}
+                  {backupError && (
+                    <div className="mt-3 rounded-xl bg-red-50 p-2.5 text-center text-[11px] font-semibold text-red-600">
+                      {backupError}
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="mt-5 flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      disabled={isBackingUp}
+                      onClick={handleCreateBackup}
+                      className="flex items-center gap-2 rounded-xl bg-[#315EFF] px-4 py-2 text-[11px] font-semibold text-white shadow-sm hover:bg-[#2852e8] disabled:opacity-50"
+                    >
+                      {isBackingUp ? (
+                        <>
+                          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                          <span>Backing up...</span>
+                        </>
+                      ) : (
+                        <>
+                          <FiUploadCloud size={14} />
+                          <span>Back Up Now</span>
+                        </>
+                      )}
+                    </button>
+
+                    {backupInfo && (
+                      <button
+                        type="button"
+                        disabled={isRestoring}
+                        onClick={handleRestoreBackup}
+                        className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-[11px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {isRestoring ? (
+                          <>
+                            <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#315EFF] border-t-transparent" />
+                            <span>Restoring...</span>
+                          </>
+                        ) : (
+                          <>
+                            <FiDownloadCloud size={14} />
+                            <span>Restore Backup</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </section>
+
+                {/* Backup Settings & Auto-Backup */}
+                <section className="rounded-[16px] border border-gray-200 bg-white p-5 shadow-sm">
+                  <h3 className="mb-3 text-[13px] font-semibold text-gray-900">
+                    Backup Preferences
+                  </h3>
+
+                  {/* Auto-backup Schedule */}
+                  <div className="flex items-center justify-between border-b border-gray-100 py-3">
+                    <div>
+                      <p className="text-[11px] font-medium text-gray-900">
+                        Auto-Backup Frequency
+                      </p>
+                      <p className="text-[9px] text-gray-500">
+                        Automatically create backup snapshots
+                      </p>
+                    </div>
+
+                    <select
+                      value={backupConfig.autoBackup}
+                      onChange={(e) => {
+                        setBackupConfig((prev) => ({
+                          ...prev,
+                          autoBackup: e.target.value,
+                        }));
+                      }}
+                      className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 outline-none focus:border-blue-500"
+                    >
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                      <option value="off">Off</option>
+                    </select>
+                  </div>
+
+                  {/* Include Photos */}
+                  <div className="flex items-center justify-between border-b border-gray-100 py-3">
+                    <div>
+                      <p className="text-[11px] font-medium text-gray-900">
+                        Include Photos
+                      </p>
+                      <p className="text-[9px] text-gray-500">
+                        Save all received and sent images in backup
+                      </p>
+                    </div>
+                    <Toggle
+                      enabled={backupConfig.includePhotos}
+                      onClick={() => handleBackupToggle("includePhotos")}
+                      label="Include Photos"
+                    />
+                  </div>
+
+                  {/* Include Videos */}
+                  <div className="flex items-center justify-between border-b border-gray-100 py-3">
+                    <div>
+                      <p className="text-[11px] font-medium text-gray-900">
+                        Include Videos
+                      </p>
+                      <p className="text-[9px] text-gray-500">
+                        Include shared videos in the cloud snapshot
+                      </p>
+                    </div>
+                    <Toggle
+                      enabled={backupConfig.includeVideos}
+                      onClick={() => handleBackupToggle("includeVideos")}
+                      label="Include Videos"
+                    />
+                  </div>
+
+                  {/* Include Documents */}
+                  <div className="flex items-center justify-between py-3">
+                    <div>
+                      <p className="text-[11px] font-medium text-gray-900">
+                        Include Documents & Files
+                      </p>
+                      <p className="text-[9px] text-gray-500">
+                        Save PDFs, spreadsheets, and files
+                      </p>
+                    </div>
+                    <Toggle
+                      enabled={backupConfig.includeDocuments}
+                      onClick={() => handleBackupToggle("includeDocuments")}
+                      label="Include Documents"
+                    />
+                  </div>
+
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleSave}
+                      className="rounded-xl bg-[#315EFF] px-4 py-1.5 text-[11px] font-semibold text-white hover:bg-[#2852e8]"
+                    >
+                      Save Preferences
+                    </button>
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {/* 3. PRIVACY TAB */}
+            {activeTab === "privacy" && (
+              <section className="rounded-[16px] border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+                <h2 className="text-[13px] font-semibold text-gray-900">
+                  Privacy & Permissions
+                </h2>
+
+                {/* Read Receipts */}
+                <div className="flex items-center justify-between border-b border-gray-100 py-2.5">
+                  <div>
+                    <p className="text-[11px] font-medium text-gray-900">
+                      Read Receipts
+                    </p>
+                    <p className="text-[9px] text-gray-500">
+                      If turned off, you won't send or receive read receipts.
+                    </p>
+                  </div>
+                  <Toggle
+                    enabled={preferences.readReceipts}
+                    onClick={() => handleToggle("readReceipts")}
+                    label="Toggle Read Receipts"
                   />
                 </div>
 
-                {/* Username */}
-
-                <div>
-                  <label
-                    htmlFor="username"
-                    className="mb-1.5 block text-[10px] font-medium text-gray-900"
+                {/* Status Privacy */}
+                <div className="flex items-center justify-between border-b border-gray-100 py-2.5">
+                  <div>
+                    <p className="text-[11px] font-medium text-gray-900">
+                      Who can see my Status Updates
+                    </p>
+                    <p className="text-[9px] text-gray-500">
+                      Controls visibility for your 24h stories
+                    </p>
+                  </div>
+                  <select
+                    value={preferences.statusPrivacy}
+                    onChange={(e) => {
+                      setPreferences((prev) => ({
+                        ...prev,
+                        statusPrivacy: e.target.value,
+                      }));
+                    }}
+                    className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 outline-none"
                   >
-                    Username
-                  </label>
+                    <option value="contacts">My Contacts Only</option>
+                    <option value="everyone">Everyone</option>
+                    <option value="nobody">Nobody</option>
+                  </select>
+                </div>
 
-                  <input
-                    id="username"
-                    name="username"
-                    type="text"
-                    value={formData.username}
-                    onChange={handleChange}
-                    className="h-[30px] w-full rounded-[9px] border border-gray-200 bg-white px-3 text-[10px] text-gray-800 outline-none focus:border-blue-500"
+                {/* Groups Privacy */}
+                <div className="flex items-center justify-between py-2.5">
+                  <div>
+                    <p className="text-[11px] font-medium text-gray-900">
+                      Who can add me to Groups
+                    </p>
+                    <p className="text-[9px] text-gray-500">
+                      Permissions for group creators
+                    </p>
+                  </div>
+                  <select
+                    value={preferences.groupAddPrivacy}
+                    onChange={(e) => {
+                      setPreferences((prev) => ({
+                        ...prev,
+                        groupAddPrivacy: e.target.value,
+                      }));
+                    }}
+                    className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 outline-none"
+                  >
+                    <option value="everyone">Everyone</option>
+                    <option value="contacts">My Contacts Only</option>
+                    <option value="nobody">Nobody</option>
+                  </select>
+                </div>
+
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    className="rounded-xl bg-[#315EFF] px-4 py-1.5 text-[11px] font-semibold text-white hover:bg-[#2852e8]"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {/* 4. PREFERENCES & NOTIFICATIONS TAB */}
+            {activeTab === "notifications" && (
+              <section className="rounded-[16px] border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+                <h2 className="text-[13px] font-semibold text-gray-900">
+                  App & Workspace Preferences
+                </h2>
+
+                {/* Email Notifications */}
+                <div className="flex min-w-0 items-center justify-between gap-4 border-b border-gray-100 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-gray-900">
+                      Email notifications
+                    </p>
+                    <p className="text-[9px] text-gray-500">
+                      Digest of mentions and file activity every morning.
+                    </p>
+                  </div>
+                  <Toggle
+                    enabled={preferences.emailNotifications}
+                    onClick={() => handleToggle("emailNotifications")}
+                    label="Toggle email notifications"
                   />
                 </div>
 
-                {/* Email */}
-
-                <div className="sm:col-span-2">
-                  <label
-                    htmlFor="email"
-                    className="mb-1.5 block text-[10px] font-medium text-gray-900"
-                  >
-                    Email
-                  </label>
-
-                  <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    className="h-[30px] w-full rounded-[9px] border border-gray-200 bg-white px-3 text-[10px] text-gray-800 outline-none focus:border-blue-500"
+                {/* Desktop Notifications */}
+                <div className="flex min-w-0 items-center justify-between gap-4 border-b border-gray-100 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-gray-900">
+                      Desktop notifications
+                    </p>
+                    <p className="text-[9px] text-gray-500">
+                      Get notified when someone messages or calls you.
+                    </p>
+                  </div>
+                  <Toggle
+                    enabled={preferences.desktopNotifications}
+                    onClick={() => handleToggle("desktopNotifications")}
+                    label="Toggle desktop notifications"
                   />
                 </div>
-              </div>
 
-              {/* Save Changes */}
-
-              <div className="mt-4 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-end">
-                {saved && (
-                  <span className="text-[10px] font-medium text-green-600">
-                    Changes saved
-                  </span>
-                )}
-
-                {saveError && (
-                  <span className="break-words text-[10px] font-medium text-red-600 sm:max-w-[300px] sm:text-right">
-                    {saveError}
-                  </span>
-                )}
-
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={isSaving}
-                  className="w-full rounded-[10px] bg-[#315EFF] px-4 py-2 text-[10px] font-semibold text-white hover:bg-[#2852e8] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                >
-                  {isSaving ? "Saving..." : "Save changes"}
-                </button>
-              </div>
-            </section>
-
-            {/* Preferences */}
-
-            <section className="mt-4 rounded-[14px] border border-gray-200 bg-white px-4 py-4 shadow-sm">
-              <h2 className="mb-3 text-[13px] font-semibold text-gray-900">
-                Preferences
-              </h2>
-
-              {/* Email Notifications */}
-
-              <div className="flex min-w-0 items-center justify-between gap-4 border-b border-gray-200 py-2.5">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-medium text-gray-900">
-                    Email notifications
-                  </p>
-
-                  <p className="mt-0.5 text-[9px] leading-4 text-gray-500">
-                    Digest of mentions and file activity every morning.
-                  </p>
+                {/* Call Ringtones */}
+                <div className="flex min-w-0 items-center justify-between gap-4 border-b border-gray-100 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-gray-900">
+                      Call Alert Sounds
+                    </p>
+                    <p className="text-[9px] text-gray-500">
+                      Play ringtones for incoming voice and video calls.
+                    </p>
+                  </div>
+                  <Toggle
+                    enabled={preferences.callRingtone}
+                    onClick={() => handleToggle("callRingtone")}
+                    label="Toggle call sounds"
+                  />
                 </div>
 
-                <Toggle
-                  enabled={preferences.emailNotifications}
-                  onClick={() => handleToggle("emailNotifications")}
-                  label="Toggle email notifications"
-                />
-              </div>
-
-              {/* Desktop Notifications */}
-
-              <div className="flex min-w-0 items-center justify-between gap-4 border-b border-gray-200 py-2.5">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-medium text-gray-900">
-                    Desktop notifications
-                  </p>
-
-                  <p className="mt-0.5 text-[9px] leading-4 text-gray-500">
-                    Get notified when someone messages you directly.
-                  </p>
+                {/* Dark Mode */}
+                <div className="flex min-w-0 items-center justify-between gap-4 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-gray-900">
+                      Dark Mode
+                    </p>
+                    <p className="text-[9px] text-gray-500">
+                      Switch between Light and Dark purple theme.
+                    </p>
+                  </div>
+                  <Toggle
+                    enabled={theme === "dark"}
+                    onClick={handleThemeToggle}
+                    label="Toggle dark mode"
+                  />
                 </div>
 
-                <Toggle
-                  enabled={preferences.desktopNotifications}
-                  onClick={() => handleToggle("desktopNotifications")}
-                  label="Toggle desktop notifications"
-                />
-              </div>
-
-              {/* Shared Link Expiry */}
-
-              <div className="flex min-w-0 items-center justify-between gap-4 border-b border-gray-200 py-2.5">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-medium text-gray-900">
-                    Shared link expiry
-                  </p>
-
-                  <p className="mt-0.5 text-[9px] leading-4 text-gray-500">
-                    Automatically expire shared links after 30 days.
-                  </p>
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    className="rounded-xl bg-[#315EFF] px-4 py-1.5 text-[11px] font-semibold text-white hover:bg-[#2852e8]"
+                  >
+                    Save Preferences
+                  </button>
                 </div>
-
-                <Toggle
-                  enabled={preferences.sharedLinkExpiry}
-                  onClick={() => handleToggle("sharedLinkExpiry")}
-                  label="Toggle shared link expiry"
-                />
-              </div>
-
-              {/* Dark Mode */}
-
-              <div className="flex min-w-0 items-center justify-between gap-4 py-2.5">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-medium text-gray-900">
-                    Dark mode
-                  </p>
-
-                  <p className="mt-0.5 text-[9px] leading-4 text-gray-500">
-                    Use the dark black and purple theme.
-                  </p>
-                </div>
-
-                <Toggle
-                  enabled={theme === "dark"}
-                  onClick={handleThemeToggle}
-                  label="Toggle dark mode"
-                />
-              </div>
-            </section>
+              </section>
+            )}
           </div>
         </main>
       </div>
@@ -351,17 +881,34 @@ function Toggle({ enabled, onClick, label }) {
       type="button"
       onClick={onClick}
       aria-label={label}
-      className={`relative h-[14px] w-[25px] shrink-0 rounded-full ${
+      className={`relative h-[16px] w-[30px] shrink-0 rounded-full transition-colors ${
         enabled ? "bg-[#315EFF]" : "bg-gray-200"
       }`}
     >
       <span
-        className={`absolute top-[2px] h-[10px] w-[10px] rounded-full bg-white shadow-sm ${
-          enabled ? "left-[13px]" : "left-[2px]"
+        className={`absolute top-[2px] h-[12px] w-[12px] rounded-full bg-white shadow-sm transition-transform ${
+          enabled ? "left-[16px]" : "left-[2px]"
         }`}
       />
     </button>
   );
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  return `${d.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })} at ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 export default Settings;
