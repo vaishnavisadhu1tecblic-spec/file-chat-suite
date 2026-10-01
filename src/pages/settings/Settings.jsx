@@ -289,24 +289,24 @@ function Settings() {
       <div className="flex min-w-0 flex-1 flex-col">
         <Navbar />
 
-        <main className="flex-1 px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+        <main className="flex-1 px-3.5 py-4 sm:px-6 sm:py-6 lg:px-8">
           <div className="mx-auto w-full max-w-[680px]">
             {/* Page Header */}
             <div className="mb-5">
-              <h1 className="text-[22px] font-semibold leading-tight text-gray-900">
+              <h1 className="text-[20px] font-semibold leading-tight text-gray-900 sm:text-[22px]">
                 Settings
               </h1>
-              <p className="mt-1 text-[11px] text-gray-500">
+              <p className="mt-1 text-[11px] text-gray-500 sm:text-xs">
                 Manage your account, privacy, calls, notifications, and cloud backups.
               </p>
             </div>
 
             {/* Navigation Tabs */}
-            <div className="mb-4 flex gap-1 rounded-2xl bg-white p-1.5 shadow-sm border border-gray-100">
+            <div className="mb-4 flex items-center gap-1 overflow-x-auto rounded-2xl border border-gray-100 bg-white p-1.5 shadow-sm [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
               <button
                 type="button"
                 onClick={() => setActiveTab("account")}
-                className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[11px] font-semibold transition ${
+                className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-3.5 py-2 text-[11px] font-semibold transition ${
                   activeTab === "account"
                     ? "bg-[#315EFF] text-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-50"
@@ -319,7 +319,7 @@ function Settings() {
               <button
                 type="button"
                 onClick={() => setActiveTab("backup")}
-                className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[11px] font-semibold transition ${
+                className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-3.5 py-2 text-[11px] font-semibold transition ${
                   activeTab === "backup"
                     ? "bg-[#315EFF] text-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-50"
@@ -332,7 +332,7 @@ function Settings() {
               <button
                 type="button"
                 onClick={() => setActiveTab("privacy")}
-                className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[11px] font-semibold transition ${
+                className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-3.5 py-2 text-[11px] font-semibold transition ${
                   activeTab === "privacy"
                     ? "bg-[#315EFF] text-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-50"
@@ -345,7 +345,7 @@ function Settings() {
               <button
                 type="button"
                 onClick={() => setActiveTab("notifications")}
-                className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[11px] font-semibold transition ${
+                className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-3.5 py-2 text-[11px] font-semibold transition ${
                   activeTab === "notifications"
                     ? "bg-[#315EFF] text-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-50"
@@ -358,7 +358,7 @@ function Settings() {
 
             {/* 1. ACCOUNT TAB */}
             {activeTab === "account" && (
-              <section className="rounded-[16px] border border-gray-200 bg-white px-5 py-5 shadow-sm">
+              <section className="rounded-[16px] border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                 <h2 className="mb-4 text-[13px] font-semibold text-gray-900">
                   Account Details
                 </h2>
@@ -368,7 +368,7 @@ function Settings() {
                   <div>
                     <label
                       htmlFor="name"
-                      className="mb-1.5 block text-[10px] font-medium text-gray-900"
+                      className="mb-1.5 block text-[11px] font-medium text-gray-900 sm:text-[10px]"
                     >
                       Full name
                     </label>
@@ -378,7 +378,7 @@ function Settings() {
                       type="text"
                       value={formData.name}
                       onChange={handleChange}
-                      className="h-[32px] w-full rounded-[9px] border border-gray-200 bg-white px-3 text-[11px] text-gray-800 outline-none focus:border-blue-500"
+                      className="h-[36px] w-full rounded-[9px] border border-gray-200 bg-white px-3 text-[12px] text-gray-800 outline-none focus:border-blue-500 sm:h-[32px] sm:text-[11px]"
                     />
                   </div>
 
@@ -386,7 +386,7 @@ function Settings() {
                   <div>
                     <label
                       htmlFor="username"
-                      className="mb-1.5 block text-[10px] font-medium text-gray-900"
+                      className="mb-1.5 block text-[11px] font-medium text-gray-900 sm:text-[10px]"
                     >
                       Username
                     </label>
@@ -396,7 +396,7 @@ function Settings() {
                       type="text"
                       value={formData.username}
                       onChange={handleChange}
-                      className="h-[32px] w-full rounded-[9px] border border-gray-200 bg-white px-3 text-[11px] text-gray-800 outline-none focus:border-blue-500"
+                      className="h-[36px] w-full rounded-[9px] border border-gray-200 bg-white px-3 text-[12px] text-gray-800 outline-none focus:border-blue-500 sm:h-[32px] sm:text-[11px]"
                     />
                   </div>
 
@@ -404,7 +404,7 @@ function Settings() {
                   <div className="sm:col-span-2">
                     <label
                       htmlFor="email"
-                      className="mb-1.5 block text-[10px] font-medium text-gray-900"
+                      className="mb-1.5 block text-[11px] font-medium text-gray-900 sm:text-[10px]"
                     >
                       Email
                     </label>
@@ -414,7 +414,7 @@ function Settings() {
                       type="email"
                       value={formData.email}
                       onChange={handleChange}
-                      className="h-[32px] w-full rounded-[9px] border border-gray-200 bg-white px-3 text-[11px] text-gray-800 outline-none focus:border-blue-500"
+                      className="h-[36px] w-full rounded-[9px] border border-gray-200 bg-white px-3 text-[12px] text-gray-800 outline-none focus:border-blue-500 sm:h-[32px] sm:text-[11px]"
                     />
                   </div>
 
@@ -422,7 +422,7 @@ function Settings() {
                   <div className="sm:col-span-2">
                     <label
                       htmlFor="about"
-                      className="mb-1.5 block text-[10px] font-medium text-gray-900"
+                      className="mb-1.5 block text-[11px] font-medium text-gray-900 sm:text-[10px]"
                     >
                       About / Status
                     </label>
@@ -433,7 +433,7 @@ function Settings() {
                       value={formData.about}
                       onChange={handleChange}
                       placeholder="Hey there! I am using SyncSpace."
-                      className="h-[32px] w-full rounded-[9px] border border-gray-200 bg-white px-3 text-[11px] text-gray-800 outline-none focus:border-blue-500"
+                      className="h-[36px] w-full rounded-[9px] border border-gray-200 bg-white px-3 text-[12px] text-gray-800 outline-none focus:border-blue-500 sm:h-[32px] sm:text-[11px]"
                     />
                   </div>
                 </div>
@@ -441,13 +441,13 @@ function Settings() {
                 {/* Save Changes */}
                 <div className="mt-5 flex flex-col items-stretch gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-end">
                   {saved && (
-                    <span className="flex items-center gap-1 text-[10px] font-semibold text-green-600">
+                    <span className="flex items-center gap-1 text-[11px] font-semibold text-green-600 sm:text-[10px]">
                       <FiCheckCircle /> Changes saved
                     </span>
                   )}
 
                   {saveError && (
-                    <span className="break-words text-[10px] font-medium text-red-600 sm:max-w-[300px] sm:text-right">
+                    <span className="break-words text-[11px] font-medium text-red-600 sm:max-w-[300px] sm:text-right sm:text-[10px]">
                       {saveError}
                     </span>
                   )}
@@ -456,7 +456,7 @@ function Settings() {
                     type="button"
                     onClick={handleSave}
                     disabled={isSaving}
-                    className="w-full rounded-[10px] bg-[#315EFF] px-5 py-2 text-[11px] font-semibold text-white shadow-sm hover:bg-[#2852e8] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                    className="w-full rounded-[10px] bg-[#315EFF] px-5 py-2.5 text-[12px] font-semibold text-white shadow-sm hover:bg-[#2852e8] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:py-2 sm:text-[11px]"
                   >
                     {isSaving ? "Saving..." : "Save changes"}
                   </button>
@@ -468,21 +468,21 @@ function Settings() {
             {activeTab === "backup" && (
               <div className="space-y-4">
                 {/* Backup Status Overview Card */}
-                <section className="rounded-[16px] border border-gray-200 bg-white p-5 shadow-sm">
+                <section className="rounded-[16px] border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                   <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3.5">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-[#315EFF]">
-                        <FiHardDrive size={24} />
+                    <div className="flex items-center gap-3 sm:gap-3.5">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-[#315EFF] sm:h-12 sm:w-12">
+                        <FiHardDrive size={20} className="sm:text-[24px]" />
                       </div>
-                      <div>
-                        <h3 className="text-[14px] font-bold text-gray-900">
+                      <div className="min-w-0">
+                        <h3 className="text-[13px] font-bold text-gray-900 sm:text-[14px]">
                           Last Cloud Backup
                         </h3>
-                        <p className="mt-0.5 text-[11px] text-gray-500">
+                        <p className="mt-0.5 text-[10px] text-gray-500 sm:text-[11px]">
                           {backupInfo ? (
                             <>
                               <span>{formatDate(backupInfo.createdAt)}</span>
-                              <span className="mx-1.5">•</span>
+                              <span className="mx-1">•</span>
                               <span>
                                 {formatBytes(
                                   backupInfo.totalSize || backupInfo.size
@@ -510,12 +510,12 @@ function Settings() {
 
                   {/* Backup Stats if Available */}
                   {backupInfo && (
-                    <div className="mt-4 grid grid-cols-3 gap-3 rounded-xl bg-gray-50 p-3 text-center">
+                    <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-gray-50 p-2.5 text-center sm:gap-3 sm:p-3">
                       <div>
                         <p className="text-[9px] font-medium uppercase text-gray-400">
                           Messages
                         </p>
-                        <p className="mt-0.5 text-[13px] font-bold text-gray-800">
+                        <p className="mt-0.5 text-[12px] font-bold text-gray-800 sm:text-[13px]">
                           {backupInfo.messagesCount ||
                             backupInfo.messageCount ||
                             0}
@@ -525,7 +525,7 @@ function Settings() {
                         <p className="text-[9px] font-medium uppercase text-gray-400">
                           Media Files
                         </p>
-                        <p className="mt-0.5 text-[13px] font-bold text-gray-800">
+                        <p className="mt-0.5 text-[12px] font-bold text-gray-800 sm:text-[13px]">
                           {backupInfo.mediaCount || 0}
                         </p>
                       </div>
@@ -533,7 +533,7 @@ function Settings() {
                         <p className="text-[9px] font-medium uppercase text-gray-400">
                           Status
                         </p>
-                        <p className="mt-0.5 text-[13px] font-bold text-green-600">
+                        <p className="mt-0.5 text-[12px] font-bold text-green-600 sm:text-[13px]">
                           Secure
                         </p>
                       </div>
@@ -553,12 +553,12 @@ function Settings() {
                   )}
 
                   {/* Action Buttons */}
-                  <div className="mt-5 flex flex-wrap items-center gap-3">
+                  <div className="mt-5 flex flex-col items-stretch gap-2.5 sm:flex-row sm:items-center sm:gap-3">
                     <button
                       type="button"
                       disabled={isBackingUp}
                       onClick={handleCreateBackup}
-                      className="flex items-center gap-2 rounded-xl bg-[#315EFF] px-4 py-2 text-[11px] font-semibold text-white shadow-sm hover:bg-[#2852e8] disabled:opacity-50"
+                      className="flex items-center justify-center gap-2 rounded-xl bg-[#315EFF] px-4 py-2.5 text-[12px] font-semibold text-white shadow-sm hover:bg-[#2852e8] disabled:opacity-50 sm:py-2 sm:text-[11px]"
                     >
                       {isBackingUp ? (
                         <>
@@ -578,7 +578,7 @@ function Settings() {
                         type="button"
                         disabled={isRestoring}
                         onClick={handleRestoreBackup}
-                        className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-[11px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:py-2 sm:text-[11px]"
                       >
                         {isRestoring ? (
                           <>
@@ -597,18 +597,18 @@ function Settings() {
                 </section>
 
                 {/* Backup Settings & Auto-Backup */}
-                <section className="rounded-[16px] border border-gray-200 bg-white p-5 shadow-sm">
+                <section className="rounded-[16px] border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                   <h3 className="mb-3 text-[13px] font-semibold text-gray-900">
                     Backup Preferences
                   </h3>
 
                   {/* Auto-backup Schedule */}
-                  <div className="flex items-center justify-between border-b border-gray-100 py-3">
-                    <div>
-                      <p className="text-[11px] font-medium text-gray-900">
+                  <div className="flex items-center justify-between gap-3 border-b border-gray-100 py-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-medium text-gray-900 sm:text-[12px]">
                         Auto-Backup Frequency
                       </p>
-                      <p className="text-[9px] text-gray-500">
+                      <p className="text-[9px] text-gray-500 sm:text-[10px]">
                         Automatically create backup snapshots
                       </p>
                     </div>
@@ -621,7 +621,7 @@ function Settings() {
                           autoBackup: e.target.value,
                         }));
                       }}
-                      className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 outline-none focus:border-blue-500"
+                      className="shrink-0 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-gray-800 outline-none focus:border-blue-500"
                     >
                       <option value="daily">Daily</option>
                       <option value="weekly">Weekly</option>
@@ -631,12 +631,12 @@ function Settings() {
                   </div>
 
                   {/* Include Photos */}
-                  <div className="flex items-center justify-between border-b border-gray-100 py-3">
-                    <div>
-                      <p className="text-[11px] font-medium text-gray-900">
+                  <div className="flex items-center justify-between gap-3 border-b border-gray-100 py-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-medium text-gray-900 sm:text-[12px]">
                         Include Photos
                       </p>
-                      <p className="text-[9px] text-gray-500">
+                      <p className="text-[9px] text-gray-500 sm:text-[10px]">
                         Save all received and sent images in backup
                       </p>
                     </div>
@@ -648,12 +648,12 @@ function Settings() {
                   </div>
 
                   {/* Include Videos */}
-                  <div className="flex items-center justify-between border-b border-gray-100 py-3">
-                    <div>
-                      <p className="text-[11px] font-medium text-gray-900">
+                  <div className="flex items-center justify-between gap-3 border-b border-gray-100 py-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-medium text-gray-900 sm:text-[12px]">
                         Include Videos
                       </p>
-                      <p className="text-[9px] text-gray-500">
+                      <p className="text-[9px] text-gray-500 sm:text-[10px]">
                         Include shared videos in the cloud snapshot
                       </p>
                     </div>
@@ -665,12 +665,12 @@ function Settings() {
                   </div>
 
                   {/* Include Documents */}
-                  <div className="flex items-center justify-between py-3">
-                    <div>
-                      <p className="text-[11px] font-medium text-gray-900">
+                  <div className="flex items-center justify-between gap-3 py-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-medium text-gray-900 sm:text-[12px]">
                         Include Documents & Files
                       </p>
-                      <p className="text-[9px] text-gray-500">
+                      <p className="text-[9px] text-gray-500 sm:text-[10px]">
                         Save PDFs, spreadsheets, and files
                       </p>
                     </div>
@@ -685,7 +685,7 @@ function Settings() {
                     <button
                       type="button"
                       onClick={handleSave}
-                      className="rounded-xl bg-[#315EFF] px-4 py-1.5 text-[11px] font-semibold text-white hover:bg-[#2852e8]"
+                      className="w-full rounded-xl bg-[#315EFF] px-4 py-2 text-[12px] font-semibold text-white hover:bg-[#2852e8] sm:w-auto sm:py-1.5 sm:text-[11px]"
                     >
                       Save Preferences
                     </button>
@@ -696,18 +696,18 @@ function Settings() {
 
             {/* 3. PRIVACY TAB */}
             {activeTab === "privacy" && (
-              <section className="rounded-[16px] border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+              <section className="space-y-4 rounded-[16px] border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                 <h2 className="text-[13px] font-semibold text-gray-900">
                   Privacy & Permissions
                 </h2>
 
                 {/* Read Receipts */}
-                <div className="flex items-center justify-between border-b border-gray-100 py-2.5">
-                  <div>
-                    <p className="text-[11px] font-medium text-gray-900">
+                <div className="flex items-center justify-between gap-3 border-b border-gray-100 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-medium text-gray-900 sm:text-[12px]">
                       Read Receipts
                     </p>
-                    <p className="text-[9px] text-gray-500">
+                    <p className="text-[9px] text-gray-500 sm:text-[10px]">
                       If turned off, you won't send or receive read receipts.
                     </p>
                   </div>
@@ -719,12 +719,12 @@ function Settings() {
                 </div>
 
                 {/* Status Privacy */}
-                <div className="flex items-center justify-between border-b border-gray-100 py-2.5">
-                  <div>
-                    <p className="text-[11px] font-medium text-gray-900">
+                <div className="flex items-center justify-between gap-3 border-b border-gray-100 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-medium text-gray-900 sm:text-[12px]">
                       Who can see my Status Updates
                     </p>
-                    <p className="text-[9px] text-gray-500">
+                    <p className="text-[9px] text-gray-500 sm:text-[10px]">
                       Controls visibility for your 24h stories
                     </p>
                   </div>
@@ -736,7 +736,7 @@ function Settings() {
                         statusPrivacy: e.target.value,
                       }));
                     }}
-                    className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 outline-none"
+                    className="shrink-0 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-gray-800 outline-none"
                   >
                     <option value="contacts">My Contacts Only</option>
                     <option value="everyone">Everyone</option>
@@ -745,12 +745,12 @@ function Settings() {
                 </div>
 
                 {/* Groups Privacy */}
-                <div className="flex items-center justify-between py-2.5">
-                  <div>
-                    <p className="text-[11px] font-medium text-gray-900">
+                <div className="flex items-center justify-between gap-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-medium text-gray-900 sm:text-[12px]">
                       Who can add me to Groups
                     </p>
-                    <p className="text-[9px] text-gray-500">
+                    <p className="text-[9px] text-gray-500 sm:text-[10px]">
                       Permissions for group creators
                     </p>
                   </div>
@@ -762,7 +762,7 @@ function Settings() {
                         groupAddPrivacy: e.target.value,
                       }));
                     }}
-                    className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 outline-none"
+                    className="shrink-0 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-gray-800 outline-none"
                   >
                     <option value="everyone">Everyone</option>
                     <option value="contacts">My Contacts Only</option>
@@ -774,7 +774,7 @@ function Settings() {
                   <button
                     type="button"
                     onClick={handleSave}
-                    className="rounded-xl bg-[#315EFF] px-4 py-1.5 text-[11px] font-semibold text-white hover:bg-[#2852e8]"
+                    className="w-full rounded-xl bg-[#315EFF] px-4 py-2 text-[12px] font-semibold text-white hover:bg-[#2852e8] sm:w-auto sm:py-1.5 sm:text-[11px]"
                   >
                     Save Changes
                   </button>
@@ -784,18 +784,18 @@ function Settings() {
 
             {/* 4. PREFERENCES & NOTIFICATIONS TAB */}
             {activeTab === "notifications" && (
-              <section className="rounded-[16px] border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+              <section className="space-y-4 rounded-[16px] border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                 <h2 className="text-[13px] font-semibold text-gray-900">
                   App & Workspace Preferences
                 </h2>
 
                 {/* Email Notifications */}
-                <div className="flex min-w-0 items-center justify-between gap-4 border-b border-gray-100 py-2.5">
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-medium text-gray-900">
+                <div className="flex min-w-0 items-center justify-between gap-3 border-b border-gray-100 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-medium text-gray-900 sm:text-[12px]">
                       Email notifications
                     </p>
-                    <p className="text-[9px] text-gray-500">
+                    <p className="text-[9px] text-gray-500 sm:text-[10px]">
                       Digest of mentions and file activity every morning.
                     </p>
                   </div>
@@ -807,12 +807,12 @@ function Settings() {
                 </div>
 
                 {/* Desktop Notifications */}
-                <div className="flex min-w-0 items-center justify-between gap-4 border-b border-gray-100 py-2.5">
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-medium text-gray-900">
+                <div className="flex min-w-0 items-center justify-between gap-3 border-b border-gray-100 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-medium text-gray-900 sm:text-[12px]">
                       Desktop notifications
                     </p>
-                    <p className="text-[9px] text-gray-500">
+                    <p className="text-[9px] text-gray-500 sm:text-[10px]">
                       Get notified when someone messages or calls you.
                     </p>
                   </div>
@@ -824,12 +824,12 @@ function Settings() {
                 </div>
 
                 {/* Call Ringtones */}
-                <div className="flex min-w-0 items-center justify-between gap-4 border-b border-gray-100 py-2.5">
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-medium text-gray-900">
+                <div className="flex min-w-0 items-center justify-between gap-3 border-b border-gray-100 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-medium text-gray-900 sm:text-[12px]">
                       Call Alert Sounds
                     </p>
-                    <p className="text-[9px] text-gray-500">
+                    <p className="text-[9px] text-gray-500 sm:text-[10px]">
                       Play ringtones for incoming voice and video calls.
                     </p>
                   </div>
@@ -841,12 +841,12 @@ function Settings() {
                 </div>
 
                 {/* Dark Mode */}
-                <div className="flex min-w-0 items-center justify-between gap-4 py-2.5">
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-medium text-gray-900">
+                <div className="flex min-w-0 items-center justify-between gap-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-medium text-gray-900 sm:text-[12px]">
                       Dark Mode
                     </p>
-                    <p className="text-[9px] text-gray-500">
+                    <p className="text-[9px] text-gray-500 sm:text-[10px]">
                       Switch between Light and Dark purple theme.
                     </p>
                   </div>
@@ -861,7 +861,7 @@ function Settings() {
                   <button
                     type="button"
                     onClick={handleSave}
-                    className="rounded-xl bg-[#315EFF] px-4 py-1.5 text-[11px] font-semibold text-white hover:bg-[#2852e8]"
+                    className="w-full rounded-xl bg-[#315EFF] px-4 py-2 text-[12px] font-semibold text-white hover:bg-[#2852e8] sm:w-auto sm:py-1.5 sm:text-[11px]"
                   >
                     Save Preferences
                   </button>

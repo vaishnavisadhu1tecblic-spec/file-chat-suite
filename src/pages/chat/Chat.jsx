@@ -156,6 +156,17 @@ function Chat() {
   const [selectedMessageIds, setSelectedMessageIds] = useState([]);
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
+  // Chat list selection mode for deletion
+  const [chatSelectionMode, setChatSelectionMode] = useState(false);
+  const [selectedChatIds, setSelectedChatIds] = useState([]);
+  const [showDeleteChatModal, setShowDeleteChatModal] = useState(false);
+  const [deletingChats, setDeletingChats] = useState(false);
+
+  // Mobile Long-press gesture handling
+  const longPressTimerRef = useRef(null);
+  const touchStartPosRef = useRef({ x: 0, y: 0 });
+  const isLongPressTriggeredRef = useRef(false);
+
   const [openMessageMenu, setOpenMessageMenu] = useState(null);
   const [deletingMessageId, setDeletingMessageId] = useState(null);
 
@@ -204,37 +215,31 @@ function Chat() {
 
       setUnreadCounts(nextUnreadCounts);
 
-      const conversationByFriendId = new Map();
+      const seenPrivateParticipants = new Set();
 
-      (conversationResponse.data?.conversations || []).forEach(
-        (conversation) => {
+      const nextChats = (conversationResponse.data?.conversations || [])
+        .map((conversation) => {
           const otherMember = conversation.members?.find((member) => {
-            const memberId = member.userId?._id || member.userId;
+            const memberId =
+              member.userId?._id || member.userId?.id || member.userId;
 
             return String(memberId) !== currentUserId;
           });
 
-          const friendId = String(
-            otherMember?.userId?._id || otherMember?.userId || "",
+          const friendUser = otherMember?.userId || otherMember || {};
+          const receiverId = String(
+            friendUser?._id ||
+              friendUser?.id ||
+              (typeof friendUser === "string" ? friendUser : ""),
           );
 
-          if (friendId && !conversationByFriendId.has(friendId)) {
-            conversationByFriendId.set(friendId, conversation);
-          }
-        },
-      );
+          const displayName =
+            friendUser?.name ||
+            friendUser?.username ||
+            friendUser?.email ||
+            "User";
 
-      const seenPrivateParticipants = new Set();
-
-      const nextChats = (friendsResponse.data?.friends || [])
-        .filter((friend) => String(friend._id) !== currentUserId)
-        .map((friend) => {
-          const receiverId = String(friend._id);
-          const conversation = conversationByFriendId.get(receiverId);
-
-          const displayName = friend.name || friend.username || friend.email;
-
-          if (!displayName || seenPrivateParticipants.has(receiverId)) {
+          if (!receiverId || seenPrivateParticipants.has(receiverId)) {
             return null;
           }
 
@@ -243,32 +248,16 @@ function Chat() {
           const chatKey = [currentUserId, receiverId].sort().join("_");
 
           return {
-            id: conversation?._id
-              ? String(conversation._id)
-              : `friend-${receiverId}`,
-
+            id: String(conversation._id),
             chatKey,
-
-            conversationId: conversation?._id ? String(conversation._id) : null,
-
+            conversationId: String(conversation._id),
             name: displayName,
-
             avatar: getInitials(displayName),
-
             online: false,
-
-            members: conversation
-              ? "Private conversation"
-              : "Friend - start a conversation",
-
-            message: conversation
-              ? "No messages yet"
-              : "Start a private conversation",
-
-            time: "",
-
+            members: "Private conversation",
+            message: conversation.lastMessage?.text || "No messages yet",
+            time: conversation.lastMessage?.time || "",
             type: "private",
-
             receiverId,
           };
         })
@@ -395,7 +384,6 @@ function Chat() {
     try {
       if (socket.connected) {
         socket.emit("mark_messages_read", { conversationId });
-        return;
       }
 
       await api.post(`/messages/conversation/${conversationId}/read`);
@@ -408,32 +396,286 @@ function Chat() {
   // OPEN CHAT & CALL ACTIONS
   // =====================================================
 
-  const openChat = async (chat) => {
-    setSelectedGroup(null);
-    if (chat.conversationId) {
-      setSelectedChatId(chat.id);
-      setMobileChatOpen(true);
-      await markChatAsRead(chat.conversationId, chat.chatKey);
-      return;
-    }
+  const openChat = useCallback(
+    async (chat) => {
+      setSelectedGroup(null);
+      if (chat.conversationId) {
+        setSelectedChatId(chat.id);
+        setMobileChatOpen(true);
+        await markChatAsRead(chat.conversationId, chat.chatKey);
+        return;
+      }
 
+      try {
+        const response = await api.post(
+          `/conversations/private/${chat.receiverId}`,
+        );
+
+        const conversationId = String(response.data?.conversation?._id || "");
+
+        await loadChatData();
+
+        if (conversationId) {
+          setSelectedChatId(conversationId);
+          setMobileChatOpen(true);
+          await markChatAsRead(conversationId, chat.chatKey);
+        }
+      } catch (error) {
+        console.error("Private conversation creation failed:", error);
+
+        alert(error.response?.data?.message || "Unable to open conversation");
+      }
+    },
+    [loadChatData, markChatAsRead],
+  );
+
+  // =====================================================
+  // CHAT LIST SELECTION & DELETE CHAT HANDLERS
+  // =====================================================
+
+  const clearLongPressTimer = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  const handleChatTouchStart = useCallback(
+    (chat, e) => {
+      if (chatSelectionMode) {
+        return;
+      }
+      const touch = e.touches?.[0];
+      if (!touch) return;
+      touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+      isLongPressTriggeredRef.current = false;
+      clearLongPressTimer();
+
+      longPressTimerRef.current = setTimeout(() => {
+        isLongPressTriggeredRef.current = true;
+        try {
+          navigator?.vibrate?.(40);
+        } catch (err) {}
+        setChatSelectionMode(true);
+        const chatId = chat.conversationId || chat.id;
+        setSelectedChatIds([chatId]);
+      }, 550);
+    },
+    [chatSelectionMode, clearLongPressTimer],
+  );
+
+  const handleChatTouchMove = useCallback(
+    (e) => {
+      const touch = e.touches?.[0];
+      if (!touch || !longPressTimerRef.current) return;
+      const deltaX = Math.abs(touch.clientX - touchStartPosRef.current.x);
+      const deltaY = Math.abs(touch.clientY - touchStartPosRef.current.y);
+      if (deltaX > 8 || deltaY > 8) {
+        clearLongPressTimer();
+      }
+    },
+    [clearLongPressTimer],
+  );
+
+  const handleChatTouchEnd = useCallback(() => {
+    clearLongPressTimer();
+  }, [clearLongPressTimer]);
+
+  const toggleChatSelection = useCallback((chatId) => {
+    if (!chatId) return;
+    setSelectedChatIds((prev) =>
+      prev.includes(chatId)
+        ? prev.filter((id) => id !== chatId)
+        : [...prev, chatId],
+    );
+  }, []);
+
+  const cancelChatSelectionMode = useCallback(() => {
+    setChatSelectionMode(false);
+    setSelectedChatIds([]);
+    setShowDeleteChatModal(false);
+  }, []);
+
+  const handleChatRowClick = useCallback(
+    (chat) => {
+      if (isLongPressTriggeredRef.current) {
+        isLongPressTriggeredRef.current = false;
+        return;
+      }
+      const chatId = chat.conversationId || chat.id;
+      if (chatSelectionMode) {
+        toggleChatSelection(chatId);
+        return;
+      }
+      openChat(chat);
+    },
+    [chatSelectionMode, openChat, toggleChatSelection],
+  );
+
+  const handleDeleteSelectedChats = useCallback(async () => {
+    if (!selectedChatIds.length || deletingChats) return;
+
+    const conversationIdsToDelete = [];
+    const chatsToDelete = chats.filter(
+      (c) =>
+        selectedChatIds.includes(c.id) ||
+        (c.conversationId && selectedChatIds.includes(c.conversationId)),
+    );
+
+    chatsToDelete.forEach((c) => {
+      if (c.conversationId) {
+        conversationIdsToDelete.push(c.conversationId);
+      } else if (c.id && !c.id.startsWith("friend-")) {
+        conversationIdsToDelete.push(c.id);
+      }
+    });
+
+    setDeletingChats(true);
     try {
-      const response = await api.post(
-        `/conversations/private/${chat.receiverId}`,
+      if (conversationIdsToDelete.length > 0) {
+        await api.delete("/conversations/delete-chat", {
+          data: { conversationIds: conversationIdsToDelete },
+        });
+      }
+
+      setChats((prev) =>
+        prev.filter(
+          (c) =>
+            !selectedChatIds.includes(c.id) &&
+            !(c.conversationId && selectedChatIds.includes(c.conversationId)),
+        ),
       );
 
-      const conversationId = String(response.data?.conversation?._id || "");
+      setUnreadCounts((prev) => {
+        const next = { ...prev };
+        chatsToDelete.forEach((c) => {
+          delete next[c.chatKey];
+          delete next[c.conversationId];
+          delete next[c.id];
+        });
+        selectedChatIds.forEach((id) => {
+          delete next[id];
+        });
+        return next;
+      });
 
-      await loadChatData();
+      setMessagesByChat((prev) => {
+        const next = { ...prev };
+        chatsToDelete.forEach((c) => {
+          if (c.chatKey) delete next[c.chatKey];
+          if (c.conversationId) delete next[c.conversationId];
+        });
+        return next;
+      });
 
-      setSelectedChatId(conversationId);
-      setMobileChatOpen(true);
+      if (
+        selectedChatId &&
+        (selectedChatIds.includes(selectedChatId) ||
+          chatsToDelete.some((c) => c.id === selectedChatId))
+      ) {
+        setSelectedChatId("");
+        setMobileChatOpen(false);
+      }
+
+      cancelChatSelectionMode();
     } catch (error) {
-      console.error("Private conversation creation failed:", error);
-
-      alert(error.response?.data?.message || "Unable to open conversation");
+      console.error("Delete chat failed:", error);
+      alert(error.response?.data?.message || "Unable to delete chat(s)");
+    } finally {
+      setDeletingChats(false);
     }
-  };
+  }, [
+    selectedChatIds,
+    deletingChats,
+    chats,
+    selectedChatId,
+    cancelChatSelectionMode,
+  ]);
+
+  const handleSearchResultClick = useCallback(
+    async (user) => {
+      setSearchText("");
+      setUserSearchResults([]);
+      const receiverId = String(user._id || user.id);
+
+      const existingChat = chats.find(
+        (c) => String(c.receiverId) === receiverId,
+      );
+
+      if (existingChat) {
+        await openChat(existingChat);
+        return;
+      }
+
+      try {
+        const response = await api.post(
+          `/conversations/private/${receiverId}`,
+        );
+        const conversation = response.data?.conversation;
+        const conversationId = String(conversation?._id || "");
+        await loadChatData();
+        if (conversationId) {
+          setSelectedChatId(conversationId);
+          setMobileChatOpen(true);
+        }
+      } catch (error) {
+        console.error("Open private conversation from search failed:", error);
+        alert(error.response?.data?.message || "Unable to open conversation");
+      }
+    },
+    [chats, loadChatData, openChat],
+  );
+
+  const deleteActiveChat = useCallback(async () => {
+    if (!selectedUser?.conversationId && !selectedChatId) return;
+    const conversationId =
+      selectedUser?.conversationId ||
+      (selectedChatId.startsWith("friend-") ? null : selectedChatId);
+
+    const confirmed = window.confirm(
+      "Delete this entire conversation? It will be removed from your chat list and its messages cleared for you.",
+    );
+    if (!confirmed) return;
+
+    try {
+      if (conversationId) {
+        await api.delete("/conversations/delete-chat", {
+          data: { conversationIds: [conversationId] },
+        });
+      }
+
+      setChats((prev) =>
+        prev.filter(
+          (c) =>
+            c.id !== selectedChatId &&
+            c.conversationId !== conversationId &&
+            c.chatKey !== activeChatId,
+        ),
+      );
+
+      setUnreadCounts((prev) => {
+        const next = { ...prev };
+        if (activeChatId) delete next[activeChatId];
+        if (conversationId) delete next[conversationId];
+        if (selectedChatId) delete next[selectedChatId];
+        return next;
+      });
+
+      setMessagesByChat((prev) => {
+        const next = { ...prev };
+        if (activeChatId) delete next[activeChatId];
+        if (conversationId) delete next[conversationId];
+        return next;
+      });
+
+      setSelectedChatId("");
+      setMobileChatOpen(false);
+      setTopMenuOpen(false);
+    } catch (error) {
+      console.error("Delete active chat failed:", error);
+      alert(error.response?.data?.message || "Unable to delete conversation");
+    }
+  }, [selectedUser?.conversationId, selectedChatId, activeChatId]);
 
   const closeMobileChat = () => {
     setMobileChatOpen(false);
@@ -548,6 +790,60 @@ function Chat() {
   // =====================================================
   // SOCKET CONNECTION
   // =====================================================
+  // SOCKET CONNECTION & PRESENCE
+  // =====================================================
+
+  const requestAllPresence = useCallback(() => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    if (!socket.connected) {
+      socket.auth = { token };
+      socket.connect();
+      return;
+    }
+
+    const userIds = [
+      ...chats.map((c) => c.receiverId),
+      ...friendsList.map((f) => f._id || f.id),
+    ]
+      .filter(Boolean)
+      .map((id) => String(id));
+
+    const uniqueUserIds = [...new Set(userIds)];
+
+    if (uniqueUserIds.length > 0) {
+      socket.emit("request_presence", { userIds: uniqueUserIds }, (response) => {
+        if (response?.success && response?.statuses) {
+          setChats((prev) =>
+            prev.map((chat) => {
+              const rId = String(chat.receiverId || "");
+              if (rId in response.statuses) {
+                return {
+                  ...chat,
+                  online: Boolean(response.statuses[rId]),
+                };
+              }
+              return chat;
+            }),
+          );
+
+          setFriendsList((prev) =>
+            prev.map((friend) => {
+              const fId = String(friend._id || friend.id || "");
+              if (fId in response.statuses) {
+                return {
+                  ...friend,
+                  online: Boolean(response.statuses[fId]),
+                };
+              }
+              return friend;
+            }),
+          );
+        }
+      });
+    }
+  }, [chats, friendsList]);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -562,6 +858,7 @@ function Chat() {
 
     const handleConnect = () => {
       setIsConnected(true);
+      requestAllPresence();
     };
 
     const handleDisconnect = () => {
@@ -570,7 +867,6 @@ function Chat() {
 
     const handleConnectError = (error) => {
       console.error("SOCKET ERROR:", error.message);
-
       setIsConnected(false);
     };
 
@@ -582,18 +878,42 @@ function Chat() {
       socket.connect();
     } else {
       setIsConnected(true);
+      requestAllPresence();
     }
+
+    // Reconnect / request presence on mobile background/foreground and network changes
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        requestAllPresence();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      requestAllPresence();
+    };
+
+    const handleOnline = () => {
+      if (!socket.connected) {
+        socket.connect();
+      }
+      requestAllPresence();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleWindowFocus);
+    window.addEventListener("pageshow", handleWindowFocus);
+    window.addEventListener("online", handleOnline);
 
     return () => {
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
       socket.off("connect_error", handleConnectError);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleWindowFocus);
+      window.removeEventListener("pageshow", handleWindowFocus);
+      window.removeEventListener("online", handleOnline);
     };
-  }, [currentUserId]);
-
-  // =====================================================
-  // PRESENCE
-  // =====================================================
+  }, [currentUserId, requestAllPresence]);
 
   useEffect(() => {
     const handleUserStatusChanged = (payload) => {
@@ -603,33 +923,96 @@ function Chat() {
         return;
       }
 
+      const isOnline = Boolean(
+        payload?.isOnline ??
+          payload?.online ??
+          (payload?.status === "online")
+      );
+
       setChats((previous) =>
         previous.map((chat) =>
           String(chat.receiverId) === userId
             ? {
                 ...chat,
-                online: payload?.online ?? payload?.status === "online",
+                online: isOnline,
               }
             : chat,
+        ),
+      );
+
+      setFriendsList((previous) =>
+        previous.map((friend) =>
+          String(friend._id || friend.id) === userId
+            ? {
+                ...friend,
+                online: isOnline,
+              }
+            : friend,
         ),
       );
     };
 
     const handlePresence = (payload) => {
+      if (payload?.statuses && typeof payload.statuses === "object") {
+        setChats((previous) =>
+          previous.map((chat) => {
+            const rId = String(chat.receiverId || "");
+            if (rId in payload.statuses) {
+              return {
+                ...chat,
+                online: Boolean(payload.statuses[rId]),
+              };
+            }
+            return chat;
+          }),
+        );
+
+        setFriendsList((previous) =>
+          previous.map((friend) => {
+            const fId = String(friend._id || friend.id || "");
+            if (fId in payload.statuses) {
+              return {
+                ...friend,
+                online: Boolean(payload.statuses[fId]),
+              };
+            }
+            return friend;
+          }),
+        );
+        return;
+      }
+
       const userId = String(payload?.userId || payload?.id || "");
 
       if (!userId) {
         return;
       }
 
+      const isOnline = Boolean(
+        payload?.isOnline ??
+          payload?.online ??
+          (payload?.status === "online")
+      );
+
       setChats((previous) =>
         previous.map((chat) =>
           String(chat.receiverId) === userId
             ? {
                 ...chat,
-                online: payload?.online ?? payload?.status === "online",
+                online: isOnline,
               }
             : chat,
+        ),
+      );
+
+      setFriendsList((previous) =>
+        previous.map((friend) =>
+          String(friend._id || friend.id) === userId
+            ? {
+                ...friend,
+                online: isOnline,
+              }
+            : friend,
         ),
       );
     };
@@ -637,22 +1020,11 @@ function Chat() {
     socket.on("user_status_changed", handleUserStatusChanged);
     socket.on("presence", handlePresence);
 
-    if (socket.connected) {
-      const userIds = chats
-        .map((chat) => chat.receiverId)
-        .filter(Boolean)
-        .map((userId) => String(userId));
-
-      if (userIds.length > 0) {
-        socket.emit("request_presence", { userIds });
-      }
-    }
-
     return () => {
       socket.off("user_status_changed", handleUserStatusChanged);
       socket.off("presence", handlePresence);
     };
-  }, [chats]);
+  }, []);
 
   // =====================================================
   // LOAD CHAT HISTORY
@@ -864,6 +1236,16 @@ function Chat() {
           [messageChatId]: 0,
           [selectedUser?.conversationId || messageChatId]: 0,
         }));
+
+        if (
+          message?.conversationId &&
+          String(message.senderId) !== currentUserId &&
+          socket.connected
+        ) {
+          socket.emit("mark_messages_read", {
+            conversationId: message.conversationId,
+          });
+        }
       }
 
       setMessagesByChat((previous) => {
@@ -1912,13 +2294,11 @@ function Chat() {
     if (status === "read") {
       return (
         <span
-          className="ml-1 inline-flex items-center text-[10px] font-semibold"
+          className="ml-1 inline-flex items-center text-[10px] font-semibold text-[#38BDF8]"
           title="Read"
           aria-label="Read"
         >
-          <span className="text-gray-300">✓</span>
-
-          <span className="text-[#38BDF8]">✓</span>
+          ✓✓
         </span>
       );
     }
@@ -1926,7 +2306,7 @@ function Chat() {
     if (status === "delivered") {
       return (
         <span
-          className="ml-1 inline-flex items-center text-[10px] font-semibold text-gray-300"
+          className="ml-1 inline-flex items-center text-[10px] font-semibold text-blue-100/75"
           title="Delivered"
           aria-label="Delivered"
         >
@@ -1937,7 +2317,7 @@ function Chat() {
 
     return (
       <span
-        className="ml-1 text-[10px] font-semibold text-white"
+        className="ml-1 text-[10px] font-semibold text-blue-100/75"
         title="Sent"
         aria-label="Sent"
       >
@@ -1951,16 +2331,18 @@ function Chat() {
   // =====================================================
 
   return (
-    <div className="flex h-screen min-h-0 overflow-hidden bg-[#F7F8FC]">
+    <div className="flex h-screen h-[100dvh] min-h-0 overflow-hidden bg-[#F7F8FC]">
       {/* DESKTOP SIDEBAR */}
-      <div className="shrink-0 lg:block">
+      <div className="shrink-0 hidden md:block">
         <Sidebar />
       </div>
 
-      <div className="flex min-w-0 min-h-0 flex-1 flex-col">
-        <Navbar />
+      <div className="flex min-w-0 min-h-0 flex-1 flex-col h-full overflow-hidden">
+        <div className={mobileChatOpen ? "hidden md:block" : "block"}>
+          <Navbar />
+        </div>
 
-        <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden h-full">
           {/* ================================================= */}
           {/* LEFT CHAT LIST */}
           {/* ================================================= */}
@@ -1973,20 +2355,77 @@ function Chat() {
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               {activeNavTab === "chat" && (
                 <>
-                  <div className="border-b border-gray-200 p-3 sm:p-4">
-                    <div className="flex items-center rounded-xl bg-[#F5F7FB] px-3 py-2.5 sm:px-4 sm:py-3">
-                      <FiSearch className="shrink-0 text-gray-400" />
+                  {chatSelectionMode ? (
+                    <div className="flex items-center justify-between border-b border-gray-200 bg-blue-50/50 px-3 py-3 sm:px-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={cancelChatSelectionMode}
+                          className="rounded-lg p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-800"
+                          aria-label="Cancel selection mode"
+                        >
+                          <FiX size={18} />
+                        </button>
+                        <span className="text-xs font-semibold text-gray-900">
+                          {selectedChatIds.length} selected
+                        </span>
+                      </div>
 
-                      <input
-                        ref={chatSearchInputRef}
-                        type="text"
-                        value={searchText}
-                        onChange={(e) => setSearchText(e.target.value)}
-                        placeholder="Search users or conversations..."
-                        className="ml-2 min-w-0 flex-1 bg-transparent text-xs outline-none sm:ml-3"
-                      />
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={selectedChatIds.length === 0}
+                          onClick={() => setShowDeleteChatModal(true)}
+                          className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-40"
+                          aria-label="Delete selected chats"
+                        >
+                          <FiTrash2 size={16} />
+                          <span className="hidden sm:inline">Delete</span>
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="border-b border-gray-200 p-3 sm:p-4">
+                      <div className="flex items-center gap-2">
+                        <div className="flex flex-1 items-center rounded-xl bg-[#F5F7FB] px-3 py-2.5 sm:px-4 sm:py-3">
+                          <FiSearch className="shrink-0 text-gray-400" />
+
+                          <input
+                            ref={chatSearchInputRef}
+                            type="text"
+                            value={searchText}
+                            onChange={(e) => setSearchText(e.target.value)}
+                            placeholder="Search users or conversations..."
+                            className="ml-2 min-w-0 flex-1 bg-transparent text-xs outline-none sm:ml-3"
+                          />
+
+                          {searchText && (
+                            <button
+                              type="button"
+                              onClick={() => setSearchText("")}
+                              className="text-gray-400 hover:text-gray-600"
+                              aria-label="Clear search text"
+                            >
+                              <FiX size={14} />
+                            </button>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setChatSelectionMode(true);
+                            setSelectedChatIds([]);
+                          }}
+                          title="Select chats to delete"
+                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-[#F5F7FB] text-gray-500 hover:bg-gray-100 hover:text-red-600 transition"
+                          aria-label="Delete chat"
+                        >
+                          <FiTrash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="min-h-0 flex-1 overflow-y-auto">
                     {/* FRIEND REQUESTS */}
@@ -2069,12 +2508,29 @@ function Chat() {
                           const isLoading =
                             friendActionState[userId] === "loading";
 
-                          const status = user.status || "Add Friend";
+                          const isFriend =
+                            user.status === "Already Friends" ||
+                            friendsList.some(
+                              (f) => String(f._id || f.id) === userId,
+                            );
+
+                          const status = isFriend
+                            ? "Friend"
+                            : user.status || "Add Friend";
 
                           return (
                             <div
                               key={userId}
-                              className="mb-2 flex min-w-0 items-center gap-2 last:mb-0"
+                              onClick={() => {
+                                if (isFriend) {
+                                  handleSearchResultClick(user);
+                                }
+                              }}
+                              className={`mb-2 flex min-w-0 items-center gap-2 rounded-lg p-1 transition last:mb-0 ${
+                                isFriend
+                                  ? "cursor-pointer hover:bg-gray-50"
+                                  : ""
+                              }`}
                             >
                               <Avatar
                                 user={user}
@@ -2096,11 +2552,27 @@ function Chat() {
                                 <button
                                   type="button"
                                   disabled={isLoading}
-                                  onClick={() => sendFriendRequest(user)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    sendFriendRequest(user);
+                                  }}
                                   className="shrink-0 text-blue-600 hover:text-blue-800 disabled:opacity-50"
                                   aria-label="Send friend request"
                                 >
                                   <FiUserPlus size={15} />
+                                </button>
+                              )}
+
+                              {isFriend && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSearchResultClick(user);
+                                  }}
+                                  className="shrink-0 rounded-md bg-blue-50 px-2 py-1 text-[10px] font-medium text-blue-600 hover:bg-blue-100"
+                                >
+                                  Message
                                 </button>
                               )}
                             </div>
@@ -2112,6 +2584,11 @@ function Chat() {
                     {/* CHAT LIST */}
 
                     {visibleChats.map((chat) => {
+                      const chatId = chat.conversationId || chat.id;
+                      const isSelected =
+                        selectedChatIds.includes(chatId) ||
+                        selectedChatIds.includes(chat.id);
+
                       const unreadCount = Number(
                         unreadCounts[chat.chatKey] ??
                           unreadCounts[chat.conversationId] ??
@@ -2123,14 +2600,34 @@ function Chat() {
                       return (
                         <div
                           key={chat.id}
-                          onClick={() => openChat(chat)}
-                          className={`cursor-pointer border-b border-gray-100 px-3 py-3 transition sm:px-4 ${
-                            selectedChatId === chat.id
-                              ? "border-l-4 border-l-blue-600 bg-blue-50"
-                              : "hover:bg-gray-50"
+                          onTouchStart={(e) => handleChatTouchStart(chat, e)}
+                          onTouchMove={handleChatTouchMove}
+                          onTouchEnd={handleChatTouchEnd}
+                          onTouchCancel={handleChatTouchEnd}
+                          onClick={() => handleChatRowClick(chat)}
+                          className={`cursor-pointer select-none border-b border-gray-100 px-3 py-3 transition sm:px-4 ${
+                            chatSelectionMode
+                              ? isSelected
+                                ? "border-l-4 border-l-blue-600 bg-blue-50/70"
+                                : "hover:bg-gray-50"
+                              : selectedChatId === chat.id
+                                ? "border-l-4 border-l-blue-600 bg-blue-50"
+                                : "hover:bg-gray-50"
                           }`}
                         >
                           <div className="flex min-w-0 items-center gap-3">
+                            {chatSelectionMode && (
+                              <div
+                                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ${
+                                  isSelected
+                                    ? "border-blue-600 bg-blue-600 text-white"
+                                    : "border-gray-300 bg-white"
+                                }`}
+                              >
+                                {isSelected && <FiCheck size={12} />}
+                              </div>
+                            )}
+
                             <Avatar
                               user={{ name: chat.name, avatar: chat.avatar }}
                               size={40}
@@ -2144,7 +2641,7 @@ function Chat() {
                                     {chat.name}
                                   </h3>
 
-                                  {unreadCount > 0 && (
+                                  {!chatSelectionMode && unreadCount > 0 && (
                                     <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 px-1.5 text-[9px] font-semibold leading-none text-white">
                                       {unreadCount > 99 ? "99+" : unreadCount}
                                     </span>
@@ -2218,11 +2715,11 @@ function Chat() {
           <main
             className={`${
               mobileChatOpen ? "flex" : "hidden md:flex"
-            } min-w-0 min-h-0 flex-1 flex-col bg-white`}
+            } min-w-0 min-h-0 flex-1 flex-col bg-white h-full overflow-hidden`}
           >
             {/* HEADER */}
 
-            <div className="relative flex min-h-[56px] shrink-0 items-center justify-between gap-2 border-b border-gray-200 px-3 sm:px-4">
+            <div className="relative flex min-h-[56px] h-14 shrink-0 items-center justify-between gap-2 border-b border-gray-200 px-3 sm:px-4">
               {selectionMode ? (
                 <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                   <button
@@ -2345,10 +2842,18 @@ function Chat() {
 
                   <button
                     type="button"
+                    onClick={deleteActiveChat}
+                    className="flex w-full items-center px-4 py-2.5 text-left text-[11px] text-red-600 hover:bg-red-50"
+                  >
+                    Delete chat
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={enterSelectionMode}
                     className="flex w-full items-center px-4 py-2.5 text-left text-[11px] text-gray-700 hover:bg-gray-50"
                   >
-                    Delete chat
+                    Select messages
                   </button>
                 </div>
               )}
@@ -2361,7 +2866,7 @@ function Chat() {
             <div
               ref={messagesContainerRef}
               onScroll={handleMessagesScroll}
-              className="min-h-0 flex-1 overflow-y-auto bg-[#F7F8FC] px-3 py-4 sm:px-5 sm:py-5 lg:px-7"
+              className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain bg-[#F7F8FC] px-3 py-4 sm:px-5 sm:py-5 lg:px-7"
             >
               {paginationByChat[activeChatId]?.loading && (
                 <div className="mb-3 text-center text-[10px] text-gray-400">
@@ -2652,7 +3157,12 @@ function Chat() {
             {/* INPUT / SELECTION TOOLBAR */}
             {/* ================================================= */}
 
-            <div className="shrink-0 border-t border-gray-200 bg-white px-5 py-3">
+            <div
+              className="shrink-0 border-t border-gray-200 bg-white px-3 sm:px-5 py-2.5 sm:py-3"
+              style={{
+                paddingBottom: "max(0.75rem, env(safe-area-inset-bottom, 0.75rem))",
+              }}
+            >
               {selectionMode ? (
                 <div className="flex items-center justify-between gap-3 rounded-xl bg-[#F5F7FB] px-4 py-3">
                   <div className="flex items-center gap-2">
@@ -2763,7 +3273,7 @@ function Chat() {
                       </button>
 
                       {showEmoji && (
-                        <div className="absolute bottom-14 right-16 z-20 grid w-48 grid-cols-6 gap-2 rounded-xl border border-gray-200 bg-white p-3 shadow-lg">
+                        <div className="absolute bottom-14 right-2 sm:right-16 z-20 grid w-48 grid-cols-6 gap-2 rounded-xl border border-gray-200 bg-white p-3 shadow-lg">
                           {[
                             "😀",
                             "😂",
@@ -2961,6 +3471,47 @@ function Chat() {
         socket={socket}
         currentUser={currentUser}
       />
+
+      {/* DELETE CHAT CONFIRMATION MODAL */}
+      {showDeleteChatModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm overflow-hidden rounded-2xl bg-white p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600">
+              <FiTrash2 size={22} />
+            </div>
+
+            <h3 className="text-base font-semibold text-gray-900">
+              {selectedChatIds.length === 1
+                ? "Delete selected chat?"
+                : `Delete ${selectedChatIds.length} selected chats?`}
+            </h3>
+
+            <p className="mt-2 text-xs text-gray-500 leading-relaxed">
+              Deleting {selectedChatIds.length === 1 ? "this conversation" : "these conversations"} will remove {selectedChatIds.length === 1 ? "it" : "them"} from your chat list and clear the messages for your view. The other {selectedChatIds.length === 1 ? "person" : "people"} will not lose their messages.
+            </p>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                disabled={deletingChats}
+                onClick={() => setShowDeleteChatModal(false)}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                disabled={deletingChats}
+                onClick={handleDeleteSelectedChats}
+                className="rounded-xl bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deletingChats ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

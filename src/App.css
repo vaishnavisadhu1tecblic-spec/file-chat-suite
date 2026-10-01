@@ -47,7 +47,7 @@ body {
 
 /* =========================================================
    DARK THEME
-   Black + Purple / Pink
+   Deep Sleek Dark Theme (High Contrast Black + Purple Accents)
    ========================================================= */
 
 html[data-theme="dark"] {
@@ -55,103 +55,116 @@ html[data-theme="dark"] {
 }
 
 html[data-theme="dark"] body {
-  background: #09090f;
-  color: #f5f3ff;
+  background: #090a0f;
+  color: #f8fafc;
 }
 
 /* Main light backgrounds */
 html[data-theme="dark"] .bg-white {
-  background-color: #11111a !important;
+  background-color: #12131c !important;
+}
+
+html[data-theme="dark"] .bg-white\/95 {
+  background-color: rgba(18, 19, 28, 0.95) !important;
 }
 
 html[data-theme="dark"] .bg-gray-50 {
-  background-color: #0f0f17 !important;
+  background-color: #161722 !important;
 }
 
 html[data-theme="dark"] .bg-gray-100 {
-  background-color: #181522 !important;
+  background-color: #1c1d2b !important;
 }
 
 html[data-theme="dark"] .bg-gray-200 {
-  background-color: #292238 !important;
+  background-color: #26283b !important;
 }
 
 html[data-theme="dark"] .bg-\[\#F5F7FB\] {
-  background-color: #09090f !important;
+  background-color: #0e0f17 !important;
 }
 
 html[data-theme="dark"] .bg-\[\#F7F8FC\] {
-  background-color: #0c0b12 !important;
+  background-color: #0a0b12 !important;
 }
 
 /* Text */
 html[data-theme="dark"] .text-gray-900 {
-  color: #f5f3ff !important;
+  color: #f8fafc !important;
+}
+
+html[data-theme="dark"] .text-black-600,
+html[data-theme="dark"] .text-black {
+  color: #f8fafc !important;
 }
 
 html[data-theme="dark"] .text-gray-800 {
-  color: #ede9fe !important;
+  color: #f1f5f9 !important;
 }
 
 html[data-theme="dark"] .text-gray-700 {
-  color: #ddd6fe !important;
+  color: #e2e8f0 !important;
 }
 
 html[data-theme="dark"] .text-gray-600 {
-  color: #c4b5fd !important;
+  color: #cbd5e1 !important;
 }
 
 html[data-theme="dark"] .text-gray-500 {
-  color: #a8a1b5 !important;
+  color: #94a3b8 !important;
 }
 
 html[data-theme="dark"] .text-gray-400 {
-  color: #8b8498 !important;
+  color: #64748b !important;
 }
 
 /* Borders */
+html[data-theme="dark"] .border-gray-100 {
+  border-color: #1c1e2d !important;
+}
+
 html[data-theme="dark"] .border-gray-200 {
-  border-color: #292238 !important;
+  border-color: #25273a !important;
 }
 
 html[data-theme="dark"] .border-gray-300 {
-  border-color: #3a304b !important;
+  border-color: #353852 !important;
 }
 
 /* Inputs */
 html[data-theme="dark"] input,
 html[data-theme="dark"] textarea,
 html[data-theme="dark"] select {
-  background-color: #14121d !important;
-  color: #f5f3ff !important;
-  border-color: #342a47 !important;
+  background-color: #141520 !important;
+  color: #f8fafc !important;
+  border-color: #2b2d42 !important;
 }
 
 html[data-theme="dark"] input::placeholder,
 html[data-theme="dark"] textarea::placeholder {
-  color: #81798f !important;
+  color: #64748b !important;
 }
 
 /* Common hover backgrounds */
 html[data-theme="dark"] .hover\:bg-gray-50:hover {
-  background-color: #181522 !important;
+  background-color: #1a1b28 !important;
 }
 
 html[data-theme="dark"] .hover\:bg-gray-100:hover {
-  background-color: #211c2c !important;
+  background-color: #232537 !important;
 }
 
 html[data-theme="dark"] .hover\:bg-gray-200:hover {
-  background-color: #2b2338 !important;
+  background-color: #2d3047 !important;
 }
 
-/* Blue primary buttons become purple/pink in dark mode */
+/* Blue primary buttons become purple in dark mode */
 html[data-theme="dark"] .bg-blue-600 {
   background-color: #8b5cf6 !important;
 }
 
 html[data-theme="dark"] .hover\:bg-blue-700:hover {
-  background-color: #ec4899 !important;
+  background-color: #a855f7 !important;
 }
 
 /* Blue text */
@@ -163,41 +176,31 @@ html[data-theme="dark"] .text-blue-500 {
   color: #c084fc !important;
 }
 
-/* =========================================================
-   CHAT STATUS TICKS
-   Keep WhatsApp-style blue read tick visible
-   ========================================================= */
-
+/* Chat status ticks */
 html[data-theme="dark"] .text-\[\#38BDF8\] {
   color: #38bdf8 !important;
 }
 
-/* =========================================================
-   DARK SCROLLBAR
-   ========================================================= */
-
+/* Dark scrollbar */
 html[data-theme="dark"] ::-webkit-scrollbar {
   width: 7px;
   height: 7px;
 }
 
 html[data-theme="dark"] ::-webkit-scrollbar-track {
-  background: #0f0d16;
+  background: #0c0d14;
 }
 
 html[data-theme="dark"] ::-webkit-scrollbar-thumb {
-  background: #3b2d50;
+  background: #2b2d40;
   border-radius: 10px;
 }
 
 html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
-  background: #6d4aa2;
+  background: #4a4e6e;
 }
 
-/* =========================================================
-   DESIGN LOGO - DARK MODE
-   ========================================================= */
-
+/* Design logo - dark mode */
 html[data-theme="dark"] #designLogo {
   background: #8b5cf6;
   border-color: #a855f7;
