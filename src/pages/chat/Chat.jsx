@@ -1,7 +1,22 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import axios from "axios";
 import socket from "../../socket";
-import { appendUniqueMessage } from "../../utils/chatUtils";
+import {
+  appendUniqueMessage,
+  formatMessageClockTime,
+  formatMessageDateLabel,
+  getMessageTimestamp,
+  resolveMessageStatus,
+  shouldShowDateSeparator,
+} from "../../utils/chatUtils";
 import api from "../../api/interceptors";
 
 import {
@@ -34,11 +49,94 @@ import StatusSection from "./components/StatusSection";
 import CallsSection from "./components/CallsSection";
 import CallingOverlay from "./components/CallingOverlay";
 
-const BACKEND_BASE =
-  import.meta.env.VITE_SOCKET_URL ||
-  (import.meta.env.VITE_BACKEND_URL
-    ? import.meta.env.VITE_BACKEND_URL.replace(/\/api$/, "")
-    : "http://localhost:3005");
+const getBackendBase = () => {
+  const envSocket = import.meta.env.VITE_SOCKET_URL;
+  const envBackend = import.meta.env.VITE_BACKEND_URL;
+  if (typeof window !== "undefined") {
+    const isLocal =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1" ||
+      window.location.hostname.startsWith("192.168.");
+    if (isLocal && (!envSocket || envSocket.includes("trycloudflare.com"))) {
+      return `http://${window.location.hostname}:3005`;
+    }
+  }
+  return (
+    envSocket ||
+    (envBackend ? envBackend.replace(/\/api$/, "") : "http://localhost:3005")
+  );
+};
+
+const BACKEND_BASE = getBackendBase();
+const MESSAGE_PAGE_SIZE = 10;
+
+const getMessageIdentity = (message) =>
+  String(
+    message?._id ||
+    message?.localId ||
+    `${message?.senderId}-${message?.time}-${message?.text}`,
+  );
+
+const resolveHistoryCursor = (payload, oldestMessage) => {
+  const raw = payload?.nextCursor || payload?.pagination?.nextCursor || null;
+
+  if (raw && typeof raw === "object") {
+    return {
+      createdAt: raw.createdAt || oldestMessage?.createdAt || null,
+      id: String(raw.id || raw._id || oldestMessage?._id || ""),
+    };
+  }
+
+  if (oldestMessage) {
+    return {
+      createdAt: oldestMessage.createdAt || null,
+      id: oldestMessage._id ? String(oldestMessage._id) : "",
+    };
+  }
+
+  return null;
+};
+
+const getHasMoreFromHistory = (payload, fetchedCount) => {
+  const explicit = payload?.hasMore ?? payload?.pagination?.hasMore;
+
+  if (typeof explicit === "boolean") {
+    return explicit;
+  }
+
+  return fetchedCount >= MESSAGE_PAGE_SIZE;
+};
+
+const getOlderHistoryParams = (cursor, oldestMessage) => {
+  const params = {
+    limit: MESSAGE_PAGE_SIZE,
+  };
+
+  const beforeFromCursor =
+    cursor && typeof cursor === "object" ? cursor.createdAt : null;
+  const beforeIdFromCursor =
+    cursor && typeof cursor === "object"
+      ? cursor.id || cursor._id
+      : null;
+
+  const before = beforeFromCursor || oldestMessage?.createdAt || null;
+  const beforeId =
+    beforeIdFromCursor ||
+    (oldestMessage?._id ? String(oldestMessage._id) : null);
+
+  if (before) {
+    const beforeDate = new Date(before);
+    params.before = Number.isNaN(beforeDate.getTime())
+      ? before
+      : beforeDate.toISOString();
+  }
+
+  if (beforeId) {
+    params.beforeId = String(beforeId);
+  }
+
+  return params;
+};
 const formatFileSize = (size) => {
   if (!size) {
     return "0 B";
@@ -119,9 +217,17 @@ function Chat() {
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
+  const chatShellRef = useRef(null);
   const chatSearchInputRef = useRef(null);
   const previewRequestsRef = useRef(new Set());
   const previousMessageCountRef = useRef(0);
+  const loadingOlderByChatRef = useRef(new Set());
+  const skipNextAutoScrollRef = useRef(false);
+  const pendingScrollRestoreRef = useRef(null);
+  const paginationByChatRef = useRef({});
+  const messagesByChatRef = useRef({});
+  const activeChatIdRef = useRef("");
+  const historyTokenByChatRef = useRef({});
 
   const [messageText, setMessageText] = useState("");
   const [searchText, setSearchText] = useState("");
@@ -229,8 +335,8 @@ function Chat() {
           const friendUser = otherMember?.userId || otherMember || {};
           const receiverId = String(
             friendUser?._id ||
-              friendUser?.id ||
-              (typeof friendUser === "string" ? friendUser : ""),
+            friendUser?.id ||
+            (typeof friendUser === "string" ? friendUser : ""),
           );
 
           const displayName =
@@ -327,16 +433,16 @@ function Chat() {
 
   const selectedUser = selectedGroup
     ? {
-        id: selectedGroup._id,
-        _id: selectedGroup._id,
-        conversationId: selectedGroup._id,
-        chatKey: selectedGroup._id,
-        name: selectedGroup.name,
-        avatar: selectedGroup.avatar || getInitials(selectedGroup.name),
-        type: "group",
-        isGroup: true,
-        groupData: selectedGroup,
-      }
+      id: selectedGroup._id,
+      _id: selectedGroup._id,
+      conversationId: selectedGroup._id,
+      chatKey: selectedGroup._id,
+      name: selectedGroup.name,
+      avatar: selectedGroup.avatar || getInitials(selectedGroup.name),
+      type: "group",
+      isGroup: true,
+      groupData: selectedGroup,
+    }
     : chats.find((chat) => chat.id === selectedChatId) || null;
 
   const selectedUserType = selectedUser?.type || "";
@@ -348,8 +454,8 @@ function Chat() {
   const activeChatId = selectedGroup
     ? String(selectedGroup._id)
     : selectedUser?.type === "private" &&
-        selectedUser?.receiverId &&
-        currentUserId
+      selectedUser?.receiverId &&
+      currentUserId
       ? selectedUser.chatKey
       : String(selectedUser?.chatKey || "");
 
@@ -357,6 +463,10 @@ function Chat() {
     () => messagesByChat[activeChatId] || [],
     [messagesByChat, activeChatId],
   );
+
+  paginationByChatRef.current = paginationByChat;
+  messagesByChatRef.current = messagesByChat;
+  activeChatIdRef.current = activeChatId;
 
   const filteredChats = chats.filter((chat) =>
     chat.name.toLowerCase().includes(searchText.toLowerCase()),
@@ -455,7 +565,7 @@ function Chat() {
         isLongPressTriggeredRef.current = true;
         try {
           navigator?.vibrate?.(40);
-        } catch (err) {}
+        } catch (err) { }
         setChatSelectionMode(true);
         const chatId = chat.conversationId || chat.id;
         setSelectedChatIds([chatId]);
@@ -722,9 +832,9 @@ function Chat() {
         previous.map((item) =>
           String(item._id) === userId
             ? {
-                ...item,
-                status: response.data?.status || "Pending",
-              }
+              ...item,
+              status: response.data?.status || "Pending",
+            }
             : item,
         ),
       );
@@ -736,9 +846,9 @@ function Chat() {
           previous.map((item) =>
             String(item._id) === userId
               ? {
-                  ...item,
-                  status,
-                }
+                ...item,
+                status,
+              }
               : item,
           ),
         );
@@ -925,17 +1035,17 @@ function Chat() {
 
       const isOnline = Boolean(
         payload?.isOnline ??
-          payload?.online ??
-          (payload?.status === "online")
+        payload?.online ??
+        (payload?.status === "online")
       );
 
       setChats((previous) =>
         previous.map((chat) =>
           String(chat.receiverId) === userId
             ? {
-                ...chat,
-                online: isOnline,
-              }
+              ...chat,
+              online: isOnline,
+            }
             : chat,
         ),
       );
@@ -944,9 +1054,9 @@ function Chat() {
         previous.map((friend) =>
           String(friend._id || friend.id) === userId
             ? {
-                ...friend,
-                online: isOnline,
-              }
+              ...friend,
+              online: isOnline,
+            }
             : friend,
         ),
       );
@@ -990,17 +1100,17 @@ function Chat() {
 
       const isOnline = Boolean(
         payload?.isOnline ??
-          payload?.online ??
-          (payload?.status === "online")
+        payload?.online ??
+        (payload?.status === "online")
       );
 
       setChats((previous) =>
         previous.map((chat) =>
           String(chat.receiverId) === userId
             ? {
-                ...chat,
-                online: isOnline,
-              }
+              ...chat,
+              online: isOnline,
+            }
             : chat,
         ),
       );
@@ -1009,9 +1119,9 @@ function Chat() {
         previous.map((friend) =>
           String(friend._id || friend.id) === userId
             ? {
-                ...friend,
-                online: isOnline,
-              }
+              ...friend,
+              online: isOnline,
+            }
             : friend,
         ),
       );
@@ -1035,37 +1145,27 @@ function Chat() {
       return;
     }
 
-    try {
-      const token = localStorage.getItem("token");
+    const chatId = activeChatId;
+    const token = (historyTokenByChatRef.current[chatId] || 0) + 1;
+    historyTokenByChatRef.current[chatId] = token;
 
-      if (!token) {
+    try {
+      const response = await api.get(`/messages/${chatId}`, {
+        params: {
+          limit: MESSAGE_PAGE_SIZE,
+        },
+      });
+
+      if (historyTokenByChatRef.current[chatId] !== token) {
         return;
       }
-
-      const response = await axios.get(
-        `${BACKEND_BASE}/api/messages/${activeChatId}`,
-        {
-          params: {
-            limit: 20,
-          },
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
 
       const messages = response.data?.messages || [];
 
       const formattedMessages = messages.map((message) => {
-        let type = "received";
-
-        if (selectedUserType === "private") {
-          type =
-            String(message.receiverId) === currentUserId ? "received" : "sent";
-        } else {
-          type =
-            String(message.senderId) === currentUserId ? "sent" : "received";
-        }
+        const isSentByMe =
+          String(message.senderId) === String(currentUserId);
+        const type = isSentByMe ? "sent" : "received";
 
         return {
           ...message,
@@ -1073,46 +1173,51 @@ function Chat() {
           senderId: String(message.senderId || ""),
           receiverId: message.receiverId ? String(message.receiverId) : null,
           type: message.messageType === "file" ? "file" : type,
+          status: message.status || "sent",
         };
       });
 
       setMessagesByChat((previous) => ({
         ...previous,
-        [activeChatId]: formattedMessages,
+        [chatId]: formattedMessages,
       }));
 
-      const hasMore =
-        response.data?.hasMore ??
-        response.data?.pagination?.hasMore ??
-        messages.length >= 20;
+      // Confirm delivery of any received messages that were still marked 'sent'
+      const unconfirmedReceivedIds = messages
+        .filter((m) => {
+          const isReceiver = String(m.receiverId) === String(currentUserId);
+          return isReceiver && m.status === "sent" && m._id;
+        })
+        .map((m) => String(m._id));
 
-      const lastMessage = formattedMessages[0];
+      if (unconfirmedReceivedIds.length > 0) {
+        if (socket.connected) {
+          socket.emit("messages_delivered", { messageIds: unconfirmedReceivedIds });
+        }
+        api.post("/messages/delivered", { messageIds: unconfirmedReceivedIds }).catch(() => { });
+      }
+
+      const hasMore = getHasMoreFromHistory(response.data, messages.length);
 
       setPaginationByChat((previous) => ({
         ...previous,
-        [activeChatId]: {
+        [chatId]: {
           hasMore,
-          nextCursor:
-            response.data?.nextCursor ||
-            response.data?.pagination?.nextCursor ||
-            lastMessage?.createdAt ||
-            lastMessage?._id ||
-            null,
+          nextCursor: resolveHistoryCursor(response.data, formattedMessages[0]),
           loading: false,
         },
       }));
     } catch (error) {
+      if (historyTokenByChatRef.current[chatId] !== token) {
+        return;
+      }
+
       console.error(
         "CHAT HISTORY ERROR:",
         error.response?.data || error.message,
       );
     }
-  }, [
-    activeChatId,
-    currentUserId,
-    selectedUser?.conversationId,
-    selectedUserType,
-  ]);
+  }, [activeChatId, currentUserId, selectedUser?.conversationId]);
 
   useEffect(() => {
     if (!selectedUser?.conversationId || !activeChatId) {
@@ -1227,37 +1332,61 @@ function Chat() {
       }
 
       const messageChatId = String(message.chatId);
-
+      const isReceiver = String(message.receiverId) === String(currentUserId);
+      const isSender = String(message.senderId) === String(currentUserId);
       const isActive = messageChatId === String(activeChatId);
 
-      if (isActive) {
+      // 1. Immediately acknowledge delivery if current user is the receiver
+      if (
+        isReceiver &&
+        message._id &&
+        !String(message._id).startsWith("local-")
+      ) {
+        if (socket.connected) {
+          socket.emit("message_delivered", {
+            messageId: String(message._id),
+            conversationId: message.conversationId,
+            chatId: messageChatId,
+          });
+        }
+        api.post(`/messages/${message._id}/delivered`).catch(() => { });
+      }
+
+      // 2. If the chat is open, immediately mark as read
+      if (isActive && isReceiver) {
         setUnreadCounts((previous) => ({
           ...previous,
           [messageChatId]: 0,
           [selectedUser?.conversationId || messageChatId]: 0,
         }));
 
-        if (
-          message?.conversationId &&
-          String(message.senderId) !== currentUserId &&
-          socket.connected
-        ) {
-          socket.emit("mark_messages_read", {
-            conversationId: message.conversationId,
-          });
+        if (message?.conversationId) {
+          if (socket.connected) {
+            socket.emit("mark_messages_read", {
+              conversationId: message.conversationId,
+            });
+          }
+          api.post(`/messages/conversation/${message.conversationId}/read`).catch(() => { });
         }
       }
 
+      // 3. Reconcile or append message
       setMessagesByChat((previous) => {
         const existing = previous[messageChatId] || [];
+
+        const incomingStatus =
+          isActive && isReceiver
+            ? "read"
+            : message.status || (isSender ? "sent" : "delivered");
 
         const newMessage = {
           ...message,
           _id: message._id ? String(message._id) : undefined,
+          localId: message.localId || undefined,
           senderId: String(message.senderId || ""),
           receiverId: message.receiverId ? String(message.receiverId) : null,
-          type:
-            String(message.senderId) === currentUserId ? "sent" : "received",
+          type: isSender ? "sent" : "received",
+          status: incomingStatus,
         };
 
         return {
@@ -1266,24 +1395,39 @@ function Chat() {
         };
       });
 
-      if (!isActive) {
+      if (!isActive && isReceiver) {
         setUnreadCounts((previous) => ({
           ...previous,
           [messageChatId]: Number(previous[messageChatId] || 0) + 1,
         }));
       }
 
-      setChats((previous) =>
-        previous.map((chat) =>
-          chat.chatKey === messageChatId
+      // 4. Update sidebar chat item or refresh if not yet present
+      setChats((previous) => {
+        const hasChat = previous.some(
+          (c) =>
+            c.chatKey === messageChatId ||
+            (message.conversationId &&
+              c.conversationId === String(message.conversationId)),
+        );
+
+        if (!hasChat) {
+          loadChatData();
+          return previous;
+        }
+
+        return previous.map((chat) =>
+          chat.chatKey === messageChatId ||
+            (message.conversationId &&
+              chat.conversationId === String(message.conversationId))
             ? {
-                ...chat,
-                message: message.text || chat.message,
-                time: message.time || chat.time,
-              }
+              ...chat,
+              message: message.text || chat.message,
+              time: message.time || chat.time,
+            }
             : chat,
-        ),
-      );
+        );
+      });
     };
 
     socket.on("receive_private_message", handlePrivateMessage);
@@ -1379,11 +1523,11 @@ function Chat() {
     if (selectedUser.type === "private") {
       socket.emit("typing_start", {
         receiverId: selectedUser.receiverId,
-        chatId: activeChatId,
+        conversationId: activeChatId,
       });
     } else {
       socket.emit("typing_start", {
-        chatId: selectedUser.id,
+        conversationId: activeChatId,
       });
     }
   };
@@ -1433,7 +1577,6 @@ function Chat() {
   useEffect(() => {
     const handleMessageStatusUpdated = (payload) => {
       const messageId = payload?.messageId || payload?._id;
-
       const status = payload?.status;
 
       if (!messageId || !status) {
@@ -1453,29 +1596,84 @@ function Chat() {
       }
 
       setMessagesByChat((previous) => {
+        let changed = false;
         const next = {};
 
         Object.entries(previous).forEach(([chatId, messages]) => {
-          next[chatId] = messages.map((message) =>
-            String(message._id) === String(messageId)
-              ? {
-                  ...message,
-                  status,
-                }
-              : message,
-          );
+          next[chatId] = messages.map((message) => {
+            const matchesId =
+              String(message._id) === String(messageId);
+            const matchesLocalId = Boolean(
+              payload?.localId && message.localId === payload.localId,
+            );
+
+            if (matchesId || matchesLocalId) {
+              changed = true;
+              return {
+                ...message,
+                _id: matchesId ? message._id : (payload.messageId || message._id),
+                status: resolveMessageStatus(message.status, status),
+                ...(payload?.deliveredAt
+                  ? { deliveredAt: payload.deliveredAt }
+                  : {}),
+                ...(payload?.readAt ? { readAt: payload.readAt } : {}),
+              };
+            }
+            return message;
+          });
         });
 
-        return next;
+        return changed ? next : previous;
+      });
+    };
+
+    const handleMessagesRead = (payload) => {
+      const conversationId = payload?.conversationId;
+      if (!conversationId) return;
+
+      setUnreadCounts((previous) => ({
+        ...previous,
+        [String(conversationId)]: 0,
+        [selectedUser?.conversationId || String(conversationId)]: 0,
+      }));
+
+      setMessagesByChat((previous) => {
+        let changed = false;
+        const next = {};
+
+        Object.entries(previous).forEach(([chatId, messages]) => {
+          next[chatId] = messages.map((message) => {
+            const isTargetConv =
+              String(message.conversationId) === String(conversationId) ||
+              chatId === String(conversationId) ||
+              (payload?.chatId && (chatId === String(payload.chatId) || String(message.chatId) === String(payload.chatId)));
+            const isSentByMe =
+              String(message.senderId || "") === String(currentUserId);
+
+            if (isTargetConv && isSentByMe && message.status !== "read") {
+              changed = true;
+              return {
+                ...message,
+                status: "read",
+                readAt: payload.readAt || new Date(),
+              };
+            }
+            return message;
+          });
+        });
+
+        return changed ? next : previous;
       });
     };
 
     socket.on("message_status_updated", handleMessageStatusUpdated);
+    socket.on("messages_read", handleMessagesRead);
 
     return () => {
       socket.off("message_status_updated", handleMessageStatusUpdated);
+      socket.off("messages_read", handleMessagesRead);
     };
-  }, [selectedUser?.conversationId]);
+  }, [selectedUser?.conversationId, currentUserId]);
 
   // =====================================================
   // PAGINATION
@@ -1486,9 +1684,22 @@ function Chat() {
       return;
     }
 
-    const pagination = paginationByChat[activeChatId];
+    const chatId = activeChatId;
+    const pagination = paginationByChatRef.current[chatId];
 
-    if (pagination?.loading || pagination?.hasMore === false) {
+    if (!pagination || pagination.loading || pagination.hasMore === false) {
+      return;
+    }
+
+    if (loadingOlderByChatRef.current.has(chatId)) {
+      return;
+    }
+
+    const existingMessages = messagesByChatRef.current[chatId] || [];
+    const oldestLoaded = existingMessages[0];
+    const params = getOlderHistoryParams(pagination?.nextCursor, oldestLoaded);
+
+    if (!params.before && !params.beforeId) {
       return;
     }
 
@@ -1498,51 +1709,35 @@ function Chat() {
       return;
     }
 
-    const previousScrollHeight = container.scrollHeight;
+    loadingOlderByChatRef.current.add(chatId);
+    historyTokenByChatRef.current[chatId] =
+      (historyTokenByChatRef.current[chatId] || 0) + 1;
 
-    const previousScrollTop = container.scrollTop;
+    pendingScrollRestoreRef.current = {
+      chatId,
+      previousScrollHeight: container.scrollHeight,
+      previousScrollTop: container.scrollTop,
+    };
 
     setPaginationByChat((previous) => ({
       ...previous,
-      [activeChatId]: {
-        ...(previous[activeChatId] || {}),
+      [chatId]: {
+        ...(previous[chatId] || {}),
         loading: true,
       },
     }));
 
     try {
-      const token = localStorage.getItem("token");
-
-      const params = {
-        limit: 20,
-      };
-
-      if (pagination?.nextCursor) {
-        params.before = pagination.nextCursor;
-      }
-
-      const response = await axios.get(
-        `${BACKEND_BASE}/api/messages/${activeChatId}`,
-        {
-          params,
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
+      const response = await api.get(`/messages/${chatId}`, {
+        params,
+      });
 
       const messages = response.data?.messages || [];
 
       const formattedMessages = messages.map((message) => {
-        let type = "received";
-
-        if (selectedUserType === "private") {
-          type =
-            String(message.receiverId) === currentUserId ? "received" : "sent";
-        } else {
-          type =
-            String(message.senderId) === currentUserId ? "sent" : "received";
-        }
+        const isSentByMe =
+          String(message.senderId) === String(currentUserId);
+        const type = isSentByMe ? "sent" : "received";
 
         return {
           ...message,
@@ -1550,83 +1745,112 @@ function Chat() {
           senderId: String(message.senderId || ""),
           receiverId: message.receiverId ? String(message.receiverId) : null,
           type: message.messageType === "file" ? "file" : type,
+          status: message.status || "sent",
         };
       });
 
+      const unconfirmedReceivedIds = messages
+        .filter((m) => {
+          const isReceiver = String(m.receiverId) === String(currentUserId);
+          return isReceiver && m.status === "sent" && m._id;
+        })
+        .map((m) => String(m._id));
+
+      if (unconfirmedReceivedIds.length > 0) {
+        if (socket.connected) {
+          socket.emit("messages_delivered", { messageIds: unconfirmedReceivedIds });
+        }
+        api.post("/messages/delivered", { messageIds: unconfirmedReceivedIds }).catch(() => { });
+      }
+
+      const latestExisting = messagesByChatRef.current[chatId] || [];
+      const seen = new Set(latestExisting.map(getMessageIdentity));
+      const uniqueOlder = formattedMessages.filter((message) => {
+        const id = getMessageIdentity(message);
+
+        if (seen.has(id)) {
+          return false;
+        }
+
+        seen.add(id);
+        return true;
+      });
+
+      const backendHasMore = getHasMoreFromHistory(
+        response.data,
+        formattedMessages.length,
+      );
+
+      const isStillActiveChat = chatId === activeChatIdRef.current;
+
+      if (uniqueOlder.length === 0) {
+        pendingScrollRestoreRef.current = null;
+        skipNextAutoScrollRef.current = false;
+
+        setPaginationByChat((previous) => ({
+          ...previous,
+          [chatId]: {
+            hasMore: false,
+            nextCursor: resolveHistoryCursor(
+              response.data,
+              formattedMessages[0] || oldestLoaded,
+            ),
+            loading: false,
+          },
+        }));
+        return;
+      }
+
+      if (isStillActiveChat) {
+        skipNextAutoScrollRef.current = true;
+      } else {
+        pendingScrollRestoreRef.current = null;
+      }
+
       setMessagesByChat((previous) => {
-        const existing = previous[activeChatId] || [];
+        const existing = previous[chatId] || [];
+        const existingIds = new Set(existing.map(getMessageIdentity));
+        const toPrepend = uniqueOlder.filter(
+          (message) => !existingIds.has(getMessageIdentity(message)),
+        );
 
-        const merged = [...formattedMessages, ...existing];
-
-        const unique = [];
-        const seen = new Set();
-
-        merged.forEach((message) => {
-          const id = String(
-            message._id ||
-              `${message.senderId}-${message.time}-${message.text}`,
-          );
-
-          if (!seen.has(id)) {
-            seen.add(id);
-            unique.push(message);
-          }
-        });
+        if (!toPrepend.length) {
+          return previous;
+        }
 
         return {
           ...previous,
-          [activeChatId]: unique,
+          [chatId]: [...toPrepend, ...existing],
         };
       });
 
-      const nextCursor =
-        response.data?.nextCursor ||
-        response.data?.pagination?.nextCursor ||
-        formattedMessages[0]?._id ||
-        null;
-
-      const hasMore =
-        response.data?.hasMore ??
-        response.data?.pagination?.hasMore ??
-        formattedMessages.length >= 20;
-
       setPaginationByChat((previous) => ({
         ...previous,
-        [activeChatId]: {
-          hasMore,
-          nextCursor,
+        [chatId]: {
+          hasMore: backendHasMore,
+          nextCursor: resolveHistoryCursor(
+            response.data,
+            formattedMessages[0] || oldestLoaded,
+          ),
           loading: false,
         },
       }));
-
-      requestAnimationFrame(() => {
-        if (!messagesContainerRef.current) {
-          return;
-        }
-
-        const newScrollHeight = messagesContainerRef.current.scrollHeight;
-
-        messagesContainerRef.current.scrollTop =
-          newScrollHeight - previousScrollHeight + previousScrollTop;
-      });
     } catch (error) {
       console.error("Older messages load failed:", error);
+      pendingScrollRestoreRef.current = null;
+      skipNextAutoScrollRef.current = false;
 
       setPaginationByChat((previous) => ({
         ...previous,
-        [activeChatId]: {
-          ...(previous[activeChatId] || {}),
+        [chatId]: {
+          ...(previous[chatId] || {}),
           loading: false,
         },
       }));
+    } finally {
+      loadingOlderByChatRef.current.delete(chatId);
     }
-  }, [
-    activeChatId,
-    currentUserId,
-    paginationByChat,
-    selectedUser?.conversationId,
-    selectedUserType,
-  ]);
+  }, [activeChatId, currentUserId, selectedUser?.conversationId]);
 
   const handleMessagesScroll = () => {
     const container = messagesContainerRef.current;
@@ -1644,10 +1868,45 @@ function Chat() {
   // AUTO SCROLL
   // =====================================================
 
+  useLayoutEffect(() => {
+    const pending = pendingScrollRestoreRef.current;
+
+    if (!pending) {
+      return;
+    }
+
+    if (pending.chatId !== activeChatId) {
+      pendingScrollRestoreRef.current = null;
+      return;
+    }
+
+    if (!messagesContainerRef.current) {
+      return;
+    }
+
+    pendingScrollRestoreRef.current = null;
+
+    const node = messagesContainerRef.current;
+
+    node.scrollTop =
+      node.scrollHeight - pending.previousScrollHeight + pending.previousScrollTop;
+  }, [activeChatId, currentMessages]);
+
+  useEffect(() => {
+    skipNextAutoScrollRef.current = false;
+    previousMessageCountRef.current = 0;
+  }, [activeChatId]);
+
   useEffect(() => {
     const previousCount = previousMessageCountRef.current;
 
     const currentCount = currentMessages.length;
+
+    if (skipNextAutoScrollRef.current) {
+      skipNextAutoScrollRef.current = false;
+      previousMessageCountRef.current = currentCount;
+      return;
+    }
 
     if (currentCount === 0 || currentCount < previousCount) {
       previousMessageCountRef.current = currentCount;
@@ -1665,22 +1924,51 @@ function Chat() {
     previousMessageCountRef.current = currentCount;
   }, [currentMessages.length, selectedChatId]);
 
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const shell = chatShellRef.current;
+
+    if (!viewport || !shell) {
+      return;
+    }
+
+    const syncShellHeight = () => {
+      shell.style.height = `${viewport.height}px`;
+    };
+
+    syncShellHeight();
+    viewport.addEventListener("resize", syncShellHeight);
+    viewport.addEventListener("scroll", syncShellHeight);
+
+    return () => {
+      viewport.removeEventListener("resize", syncShellHeight);
+      viewport.removeEventListener("scroll", syncShellHeight);
+      shell.style.height = "";
+    };
+  }, []);
+
   // =====================================================
-  // SEND MESSAGE
+  // SEND MESSAGE & RETRY
   // =====================================================
 
-  const sendMessage = () => {
+  const retrySendMessage = useCallback(
+    (failedMsg) => {
+      if (!failedMsg?.text) return;
+      removeMessageFromLocalChat(failedMsg._id || failedMsg.localId);
+      setMessageText(failedMsg.text);
+    },
+    [],
+  );
+
+  const sendMessage = async () => {
     const text = messageText.trim();
 
-    if (!text || !selectedUser) {
+    if (!text || !selectedUser || !currentUserId) {
       return;
     }
 
-    if (!currentUserId) {
-      return;
-    }
-
-    const time = new Date().toLocaleTimeString([], {
+    const createdAt = new Date().toISOString();
+    const time = new Date(createdAt).toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
     });
@@ -1689,57 +1977,233 @@ function Chat() {
       .toString(16)
       .slice(2)}`;
 
-    if (selectedUser.type === "private") {
-      if (!selectedUser.receiverId) {
-        return;
+    setMessageText("");
+    setShowEmoji(false);
+
+    const isPrivate = selectedUser.type === "private";
+    if (isPrivate && !selectedUser.receiverId) {
+      return;
+    }
+
+    const optimisticMessage = {
+      _id: localId,
+      localId,
+      chatId: activeChatId,
+      conversationId:
+        selectedUser.conversationId || (isPrivate ? null : selectedUser.id),
+      senderId: currentUserId,
+      receiverId: isPrivate ? String(selectedUser.receiverId) : null,
+      text,
+      time,
+      createdAt,
+      type: "sent",
+      status: "sending",
+    };
+
+    addMessageToChat(activeChatId, optimisticMessage);
+
+    const handleSaveSuccess = (savedMsg) => {
+      setMessagesByChat((previous) => {
+        const existing = previous[activeChatId] || [];
+        return {
+          ...previous,
+          [activeChatId]: appendUniqueMessage(existing, {
+            ...savedMsg,
+            localId,
+            type: "sent",
+            status: savedMsg.status || "sent",
+          }),
+        };
+      });
+
+      setChats((previous) =>
+        previous.map((c) =>
+          c.chatKey === activeChatId ||
+            c.conversationId === String(savedMsg.conversationId)
+            ? {
+              ...c,
+              message: savedMsg.text || text,
+              time: savedMsg.time || time,
+            }
+            : c,
+        ),
+      );
+    };
+
+    const handleSaveFailure = (reason) => {
+      console.error("Message sending failed:", reason);
+      setMessagesByChat((previous) => {
+        const existing = previous[activeChatId] || [];
+        return {
+          ...previous,
+          [activeChatId]: existing.map((m) =>
+            m._id === localId || m.localId === localId
+              ? { ...m, status: "failed" }
+              : m,
+          ),
+        };
+      });
+    };
+
+    if (isPrivate) {
+      if (socket.connected) {
+        socket.emit("typing_stop", {
+          receiverId: selectedUser.receiverId,
+          chatId: activeChatId,
+        });
       }
 
-      const privateMessage = {
+      const privatePayload = {
         chatId: activeChatId,
+        conversationId: selectedUser.conversationId,
         senderId: currentUserId,
         receiverId: String(selectedUser.receiverId),
         text,
         time,
-        type: "sent",
-        status: "sent",
+        localId,
         _id: localId,
       };
 
       if (socket.connected) {
-        addMessageToChat(activeChatId, privateMessage);
+        let ackReceived = false;
+        const ackTimeout = setTimeout(async () => {
+          if (!ackReceived) {
+            try {
+              const res = await api.post("/messages", privatePayload);
+              if (res.data?.success && res.data?.message) {
+                handleSaveSuccess(res.data.message);
+              }
+            } catch (err) {
+              handleSaveFailure(err.response?.data?.message || err.message);
+            }
+          }
+        }, 4000);
 
-        socket.emit("send_private_message", privateMessage);
+        socket.emit(
+          "send_private_message",
+          privatePayload,
+          async (response) => {
+            ackReceived = true;
+            clearTimeout(ackTimeout);
+
+            if (response?.success) {
+              handleSaveSuccess(
+                response.message || {
+                  _id: response.messageId,
+                  conversationId: response.conversationId,
+                  status: response.status || "sent",
+                  chatId: activeChatId,
+                  senderId: currentUserId,
+                  receiverId: String(selectedUser.receiverId),
+                  text,
+                  time,
+                },
+              );
+            } else {
+              try {
+                const res = await api.post("/messages", privatePayload);
+                if (res.data?.success && res.data?.message) {
+                  handleSaveSuccess(res.data.message);
+                } else {
+                  handleSaveFailure(
+                    response?.reason || "Failed to save message",
+                  );
+                }
+              } catch (err) {
+                handleSaveFailure(
+                  err.response?.data?.message ||
+                  response?.reason ||
+                  "Failed to save message",
+                );
+              }
+            }
+          },
+        );
       } else {
-        addMessageToChat(activeChatId, privateMessage);
+        try {
+          const res = await api.post("/messages", privatePayload);
+          if (res.data?.success && res.data?.message) {
+            handleSaveSuccess(res.data.message);
+          } else {
+            handleSaveFailure("Failed to send message");
+          }
+        } catch (err) {
+          handleSaveFailure(err.response?.data?.message || err.message);
+        }
       }
     } else {
-      const groupMessage = {
+      const groupPayload = {
         chatId: selectedUser.conversationId || selectedUser.id,
         conversationId: selectedUser.conversationId || selectedUser.id,
         senderId: currentUserId,
         text,
         time,
-        type: "sent",
-        status: "sent",
+        localId,
         _id: localId,
       };
 
       if (socket.connected) {
-        addMessageToChat(activeChatId, groupMessage);
-        socket.emit("send_message", groupMessage);
+        let ackReceived = false;
+        const ackTimeout = setTimeout(async () => {
+          if (!ackReceived) {
+            try {
+              const res = await api.post("/messages", groupPayload);
+              if (res.data?.success && res.data?.message) {
+                handleSaveSuccess(res.data.message);
+              }
+            } catch (err) {
+              handleSaveFailure(err.response?.data?.message || err.message);
+            }
+          }
+        }, 4000);
+
+        socket.emit("send_message", groupPayload, async (response) => {
+          ackReceived = true;
+          clearTimeout(ackTimeout);
+
+          if (response?.success) {
+            handleSaveSuccess(
+              response.message || {
+                _id: response.messageId,
+                conversationId: response.conversationId,
+                status: response.status || "sent",
+                chatId: groupPayload.chatId,
+                senderId: currentUserId,
+                text,
+                time,
+              },
+            );
+          } else {
+            try {
+              const res = await api.post("/messages", groupPayload);
+              if (res.data?.success && res.data?.message) {
+                handleSaveSuccess(res.data.message);
+              } else {
+                handleSaveFailure(
+                  response?.reason || "Failed to save group message",
+                );
+              }
+            } catch (err) {
+              handleSaveFailure(
+                err.response?.data?.message ||
+                response?.reason ||
+                "Failed to save group message",
+              );
+            }
+          }
+        });
       } else {
-        addMessageToChat(activeChatId, groupMessage);
+        try {
+          const res = await api.post("/messages", groupPayload);
+          if (res.data?.success && res.data?.message) {
+            handleSaveSuccess(res.data.message);
+          } else {
+            handleSaveFailure("Failed to send message");
+          }
+        } catch (err) {
+          handleSaveFailure(err.response?.data?.message || err.message);
+        }
       }
-    }
-
-    setMessageText("");
-    setShowEmoji(false);
-
-    if (selectedUser?.type === "private") {
-      socket.emit("typing_stop", {
-        receiverId: selectedUser.receiverId,
-        chatId: activeChatId,
-      });
     }
   };
 
@@ -2015,8 +2479,11 @@ function Chat() {
   // DELETE MESSAGE
   // =====================================================
 
-  const isMessageSentByCurrentUser = (message) =>
-    String(message?.senderId || "") === String(currentUserId);
+  const isMessageSentByCurrentUser = (message) => {
+    const senderId =
+      message?.senderId?._id || message?.senderId?.id || message?.senderId;
+    return String(senderId || "") === String(currentUserId);
+  };
 
   const removeMessageFromLocalChat = (messageId) => {
     if (!messageId) {
@@ -2284,17 +2751,51 @@ function Chat() {
   // MESSAGE STATUS TICKS
   // =====================================================
 
-  const MessageStatusTicks = ({ message }) => {
+  const MessageStatusTicks = ({ message, onRetry }) => {
     if (!isMessageSentByCurrentUser(message)) {
       return null;
     }
 
     const status = message?.status || "sent";
 
+    if (status === "failed") {
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onRetry) {
+              onRetry(message);
+            } else {
+              retrySendMessage(message);
+            }
+          }}
+          className="ml-1.5 inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-bold text-red-300 hover:text-white hover:bg-red-500/30 transition-colors"
+          title="Sending failed. Click to retry."
+          aria-label="Failed to send. Click to retry."
+        >
+          <span>✕</span>
+          <span className="underline">Retry</span>
+        </button>
+      );
+    }
+
+    if (status === "sending") {
+      return (
+        <span
+          className="ml-1 text-[9px] text-blue-200/60 animate-pulse"
+          title="Sending..."
+          aria-label="Sending..."
+        >
+          🕒
+        </span>
+      );
+    }
+
     if (status === "read") {
       return (
         <span
-          className="ml-1 inline-flex items-center text-[10px] font-semibold text-[#38BDF8]"
+          className="ml-1 inline-flex items-center text-[11px] font-semibold text-[#38BDF8]"
           title="Read"
           aria-label="Read"
         >
@@ -2306,7 +2807,7 @@ function Chat() {
     if (status === "delivered") {
       return (
         <span
-          className="ml-1 inline-flex items-center text-[10px] font-semibold text-blue-100/75"
+          className="ml-1 inline-flex items-center text-[11px] font-semibold text-blue-100/75"
           title="Delivered"
           aria-label="Delivered"
         >
@@ -2317,7 +2818,7 @@ function Chat() {
 
     return (
       <span
-        className="ml-1 text-[10px] font-semibold text-blue-100/75"
+        className="ml-1 text-[11px] font-semibold text-blue-100/75"
         title="Sent"
         aria-label="Sent"
       >
@@ -2331,7 +2832,10 @@ function Chat() {
   // =====================================================
 
   return (
-    <div className="flex h-screen h-[100dvh] min-h-0 overflow-hidden bg-[#F7F8FC]">
+    <div
+      ref={chatShellRef}
+      className="flex h-[100dvh] min-h-0 overflow-hidden bg-[#F7F8FC]"
+    >
       {/* DESKTOP SIDEBAR */}
       <div className="shrink-0 hidden md:block">
         <Sidebar />
@@ -2348,9 +2852,8 @@ function Chat() {
           {/* ================================================= */}
 
           <aside
-            className={`${
-              mobileChatOpen ? "hidden md:flex" : "flex"
-            } w-full shrink-0 flex-col border-r border-gray-200 bg-white md:w-[280px] lg:w-[320px] xl:w-[320px]`}
+            className={`${mobileChatOpen ? "hidden md:flex" : "flex"
+              } w-full shrink-0 flex-col border-r border-gray-200 bg-white md:w-[280px] lg:w-[320px] xl:w-[320px]`}
           >
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               {activeNavTab === "chat" && (
@@ -2526,11 +3029,10 @@ function Chat() {
                                   handleSearchResultClick(user);
                                 }
                               }}
-                              className={`mb-2 flex min-w-0 items-center gap-2 rounded-lg p-1 transition last:mb-0 ${
-                                isFriend
-                                  ? "cursor-pointer hover:bg-gray-50"
-                                  : ""
-                              }`}
+                              className={`mb-2 flex min-w-0 items-center gap-2 rounded-lg p-1 transition last:mb-0 ${isFriend
+                                ? "cursor-pointer hover:bg-gray-50"
+                                : ""
+                                }`}
                             >
                               <Avatar
                                 user={user}
@@ -2591,10 +3093,10 @@ function Chat() {
 
                       const unreadCount = Number(
                         unreadCounts[chat.chatKey] ??
-                          unreadCounts[chat.conversationId] ??
-                          unreadCounts[chat.id] ??
-                          chat.unreadCount ??
-                          0,
+                        unreadCounts[chat.conversationId] ??
+                        unreadCounts[chat.id] ??
+                        chat.unreadCount ??
+                        0,
                       );
 
                       return (
@@ -2605,24 +3107,22 @@ function Chat() {
                           onTouchEnd={handleChatTouchEnd}
                           onTouchCancel={handleChatTouchEnd}
                           onClick={() => handleChatRowClick(chat)}
-                          className={`cursor-pointer select-none border-b border-gray-100 px-3 py-3 transition sm:px-4 ${
-                            chatSelectionMode
-                              ? isSelected
-                                ? "border-l-4 border-l-blue-600 bg-blue-50/70"
-                                : "hover:bg-gray-50"
-                              : selectedChatId === chat.id
-                                ? "border-l-4 border-l-blue-600 bg-blue-50"
-                                : "hover:bg-gray-50"
-                          }`}
+                          className={`cursor-pointer select-none border-b border-gray-100 px-3 py-3 transition sm:px-4 ${chatSelectionMode
+                            ? isSelected
+                              ? "border-l-4 border-l-blue-600 bg-blue-50/70"
+                              : "hover:bg-gray-50"
+                            : selectedChatId === chat.id
+                              ? "border-l-4 border-l-blue-600 bg-blue-50"
+                              : "hover:bg-gray-50"
+                            }`}
                         >
                           <div className="flex min-w-0 items-center gap-3">
                             {chatSelectionMode && (
                               <div
-                                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ${
-                                  isSelected
-                                    ? "border-blue-600 bg-blue-600 text-white"
-                                    : "border-gray-300 bg-white"
-                                }`}
+                                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ${isSelected
+                                  ? "border-blue-600 bg-blue-600 text-white"
+                                  : "border-gray-300 bg-white"
+                                  }`}
                               >
                                 {isSelected && <FiCheck size={12} />}
                               </div>
@@ -2713,9 +3213,8 @@ function Chat() {
           {/* ================================================= */}
 
           <main
-            className={`${
-              mobileChatOpen ? "flex" : "hidden md:flex"
-            } min-w-0 min-h-0 flex-1 flex-col bg-white h-full overflow-hidden`}
+            className={`${mobileChatOpen ? "flex" : "hidden md:flex"
+              } min-w-0 min-h-0 flex-1 flex-col bg-white h-full overflow-hidden`}
           >
             {/* HEADER */}
 
@@ -2758,13 +3257,12 @@ function Chat() {
                     </h2>
 
                     <p
-                      className={`truncate text-[9px] ${
-                        typingByChat[activeChatId]
-                          ? "font-medium text-blue-600"
-                          : selectedUser?.online
-                            ? "text-green-600"
-                            : "text-gray-400"
-                      }`}
+                      className={`truncate text-[9px] ${typingByChat[activeChatId]
+                        ? "font-medium text-blue-600"
+                        : selectedUser?.online
+                          ? "text-green-600"
+                          : "text-gray-400"
+                        }`}
                     >
                       {selectedUser?.isGroup
                         ? `${selectedUser.groupData?.members?.length || 0} members`
@@ -2874,12 +3372,17 @@ function Chat() {
                 </div>
               )}
 
-              <div className="mb-7 text-center text-[10px] text-gray-400">
-                Today
-              </div>
-
               {currentMessages.map((msg, index) => {
                 const messageId = String(msg._id || `local-${index}`);
+                const clockLabel = formatMessageClockTime(msg);
+                const dateLabel = shouldShowDateSeparator(currentMessages, index)
+                  ? formatMessageDateLabel(getMessageTimestamp(msg))
+                  : "";
+                const dateSeparator = dateLabel ? (
+                  <div className="mb-7 text-center text-[10px] text-gray-400">
+                    {dateLabel}
+                  </div>
+                ) : null;
 
                 const isSelected = selectedMessageIds.includes(messageId);
 
@@ -2889,11 +3392,10 @@ function Chat() {
                   <button
                     type="button"
                     onClick={() => toggleMessageSelection(messageId)}
-                    className={`mt-3 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border shadow-sm ${
-                      isSelected
-                        ? "border-blue-600 bg-blue-600 text-white"
-                        : "border-gray-300 bg-white text-transparent"
-                    }`}
+                    className={`mt-3 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border shadow-sm ${isSelected
+                      ? "border-blue-600 bg-blue-600 text-white"
+                      : "border-gray-300 bg-white text-transparent"
+                      }`}
                     aria-label={
                       isSelected ? "Deselect message" : "Select message"
                     }
@@ -2947,24 +3449,24 @@ function Chat() {
 
                 if (msg.type === "received") {
                   return (
-                    <div
-                      key={`${msg._id || index}-${msg.time}`}
-                      className="group mb-4 flex min-w-0 items-start gap-2"
-                    >
-                      {selectionControl}
+                    <Fragment key={messageId}>
+                      {dateSeparator}
+                      <div className="group mb-4 flex min-w-0 items-start gap-2">
+                        {selectionControl}
 
-                      <div className="min-w-0 max-w-[88%] rounded-xl rounded-tl-md border border-gray-200 bg-white px-3 py-2.5 shadow-sm sm:max-w-[75%] sm:px-4 sm:py-3">
-                        <p className="min-w-0 break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-[12px] leading-5">
-                          {msg.text}
-                        </p>
+                        <div className="min-w-0 max-w-[88%] rounded-xl rounded-tl-md border border-gray-200 bg-white px-3 py-2.5 shadow-sm sm:max-w-[75%] sm:px-4 sm:py-3">
+                          <p className="min-w-0 break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-[12px] leading-5">
+                            {msg.text}
+                          </p>
 
-                        <p className="mt-2 text-[9px] text-gray-400">
-                          {msg.time}
-                        </p>
+                          <p className="mt-2 text-[9px] text-gray-400">
+                            {clockLabel}
+                          </p>
+                        </div>
+
+                        {messageMenu}
                       </div>
-
-                      {messageMenu}
-                    </div>
+                    </Fragment>
                   );
                 }
 
@@ -2972,62 +3474,71 @@ function Chat() {
 
                 if (msg.type === "sent") {
                   return (
-                    <div
-                      key={`${msg._id || index}-${msg.time}`}
-                      className="group mb-4 flex min-w-0 items-start justify-end gap-2"
-                    >
-                      <div className="min-w-0 max-w-[88%] rounded-xl rounded-br-md bg-blue-600 px-3 py-2.5 text-white sm:max-w-[75%] sm:px-4 sm:py-3">
-                        <p className="min-w-0 break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-[12px] leading-5">
-                          {msg.text}
-                        </p>
+                    <Fragment key={messageId}>
+                      {dateSeparator}
 
-                        <div className="mt-2 flex items-center justify-end">
-                          <span className="text-[9px] text-blue-100">
-                            {msg.time}
-                          </span>
+                      <div
+                        className="group mb-4 flex min-w-0 items-start justify-end gap-2"
+                      >
+                        <div className="min-w-0 max-w-[88%] rounded-xl rounded-br-md bg-blue-600 px-3 py-2.5 text-white sm:max-w-[75%] sm:px-4 sm:py-3">
+                          <p className="min-w-0 break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-[12px] leading-5">
+                            {msg.text}
+                          </p>
 
-                          <MessageStatusTicks message={msg} />
+                          <div className="mt-2 flex items-center justify-end">
+                            <span className="text-[9px] text-blue-100">
+                              {msg.time}
+                            </span>
+
+                            <MessageStatusTicks
+                              message={msg}
+                              onRetry={retrySendMessage}
+                            />
+                          </div>
                         </div>
+
+
+                        {messageMenu}
+
+                        {selectionControl}
                       </div>
-
-                      {messageMenu}
-
-                      {selectionControl}
-                    </div>
+                    </Fragment>
                   );
                 }
+
 
                 // VOICE
 
                 if (msg.type === "voice") {
                   return (
-                    <div
-                      key={`${msg._id || index}-${msg.time}`}
-                      className="group mb-4 flex min-w-0 items-start gap-2"
-                    >
-                      {selectionControl}
+                    <Fragment key={messageId}>
+                      {dateSeparator}
+                      <div className="group mb-4 flex min-w-0 items-start gap-2">
 
-                      <div className="flex w-full max-w-[250px] min-w-0 items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-3 shadow-sm sm:px-4">
-                        <button
-                          type="button"
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"
-                        >
-                          <FiPlay size={14} />
-                        </button>
+                        {selectionControl}
 
-                        <div className="min-w-0 flex-1">
-                          <div className="h-1.5 rounded-full bg-gray-200">
-                            <div className="h-1.5 w-[55%] rounded-full bg-blue-500" />
+                        <div className="flex w-full max-w-[250px] min-w-0 items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-3 shadow-sm sm:px-4">
+                          <button
+                            type="button"
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"
+                          >
+                            <FiPlay size={14} />
+                          </button>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="h-1.5 rounded-full bg-gray-200">
+                              <div className="h-1.5 w-[55%] rounded-full bg-blue-500" />
+                            </div>
                           </div>
+
+                          <span className="shrink-0 text-[11px] text-gray-500">
+                            {msg.duration}
+                          </span>
                         </div>
 
-                        <span className="shrink-0 text-[11px] text-gray-500">
-                          {msg.duration}
-                        </span>
+                        {messageMenu}
                       </div>
-
-                      {messageMenu}
-                    </div>
+                    </Fragment>
                   );
                 }
 
@@ -3045,9 +3556,8 @@ function Chat() {
                   return (
                     <div
                       key={`${msg._id || index}-${msg.time}`}
-                      className={`group mb-4 flex min-w-0 items-start gap-2 ${
-                        isSent ? "justify-end" : ""
-                      }`}
+                      className={`group mb-4 flex min-w-0 items-start gap-2 ${isSent ? "justify-end" : ""
+                        }`}
                     >
                       {!isSent && selectionControl}
 
@@ -3135,7 +3645,10 @@ function Chat() {
                               {msg.time}
                             </span>
 
-                            <MessageStatusTicks message={msg} />
+                            <MessageStatusTicks
+                              message={msg}
+                              onRetry={retrySendMessage}
+                            />
                           </div>
                         )}
                       </div>
@@ -3200,33 +3713,32 @@ function Chat() {
                 <>
                   {uploadState.status !== "idle" && (
                     <div
-                      className={`mb-2 text-[10px] ${
-                        uploadState.status === "error"
-                          ? "text-red-500"
-                          : uploadState.status === "uploading"
-                            ? "text-blue-600"
-                            : "text-green-600"
-                      }`}
+                      className={`mb-2 text-[10px] ${uploadState.status === "error"
+                        ? "text-red-500"
+                        : uploadState.status === "uploading"
+                          ? "text-blue-600"
+                          : "text-green-600"
+                        }`}
                     >
                       {uploadState.message}
                     </div>
                   )}
 
                   {selectedUser?.isGroup &&
-                  selectedUser.groupData?.permissions?.sendMessages ===
+                    selectedUser.groupData?.permissions?.sendMessages ===
                     "admins" &&
-                  !(
-                    String(
-                      selectedUser.groupData.owner?._id ||
+                    !(
+                      String(
+                        selectedUser.groupData.owner?._id ||
                         selectedUser.groupData.owner,
-                    ) === currentUserId ||
-                    selectedUser.groupData.members?.some(
-                      (m) =>
-                        String(m.userId?._id || m.userId?.id || m.userId) ===
+                      ) === currentUserId ||
+                      selectedUser.groupData.members?.some(
+                        (m) =>
+                          String(m.userId?._id || m.userId?.id || m.userId) ===
                           currentUserId &&
-                        (m.role === "admin" || m.role === "owner"),
-                    )
-                  ) ? (
+                          (m.role === "admin" || m.role === "owner"),
+                      )
+                    ) ? (
                     <div className="flex h-11 items-center justify-center rounded-xl bg-gray-100 px-4 text-center text-xs font-medium text-gray-500">
                       Only group admins can send messages in this group.
                     </div>
@@ -3258,9 +3770,8 @@ function Chat() {
                             sendMessage();
                           }
                         }}
-                        placeholder={`Message ${
-                          selectedUser?.name || "this conversation"
-                        }...`}
+                        placeholder={`Message ${selectedUser?.name || "this conversation"
+                          }...`}
                         className="min-w-0 flex-1 bg-transparent text-xs outline-none"
                       />
 

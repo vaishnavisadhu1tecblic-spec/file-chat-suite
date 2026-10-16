@@ -1,4 +1,5 @@
 import api from "./axios";
+import { disconnectSocketSession } from "../socket";
 
 // Request Interceptor
 api.interceptors.request.use(
@@ -24,6 +25,8 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      disconnectSocketSession();
       alert("Session Expired");
     }
 

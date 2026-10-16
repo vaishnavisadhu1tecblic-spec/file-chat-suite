@@ -1,28 +1,40 @@
 import { useEffect, useState } from "react";
 
+function readStoredUser() {
+  const storedUser = localStorage.getItem("user");
+
+  if (!storedUser) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(storedUser);
+  } catch (error) {
+    console.error("Failed to read logged-in user:", error);
+    return null;
+  }
+}
+
 function useAuth() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => readStoredUser());
 
   useEffect(() => {
-    const storedUser = localStorage.getItem("user");
+    const syncUser = () => {
+      setUser(readStoredUser());
+    };
 
-    if (!storedUser) {
-      setUser(null);
-      return;
-    }
+    window.addEventListener("userUpdated", syncUser);
+    window.addEventListener("storage", syncUser);
 
-    try {
-      const parsedUser = JSON.parse(storedUser);
-      setUser(parsedUser);
-    } catch (error) {
-      console.error("Failed to read logged-in user:", error);
-      setUser(null);
-    }
+    return () => {
+      window.removeEventListener("userUpdated", syncUser);
+      window.removeEventListener("storage", syncUser);
+    };
   }, []);
 
   return {
     user,
-    userId: user?._id || null,
+    userId: user?._id || user?.id || null,
     token: localStorage.getItem("token"),
     isAuthenticated: Boolean(localStorage.getItem("token")),
   };

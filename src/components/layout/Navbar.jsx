@@ -1,13 +1,41 @@
+import { useEffect, useState } from "react";
 import { FiBell, FiMenu, FiSearch } from "react-icons/fi";
 import useAuth from "../../hooks/useAuth";
 import Avatar from "../common/Avatar";
+import api from "../../api/interceptors";
 
 function Navbar() {
   const { user } = useAuth();
+  const [hasUnread, setHasUnread] = useState(false);
 
   const handleMenuClick = () => {
     window.dispatchEvent(new Event("syncspace:toggle-sidebar"));
   };
+
+  useEffect(() => {
+    const loadUnread = async () => {
+      try {
+        const response = await api.get("/messages/unread-counts");
+        const total = Number(
+          response.data?.total ??
+            Object.values(response.data?.counts || {}).reduce(
+              (sum, value) => sum + Number(value || 0),
+              0,
+            ),
+        );
+        setHasUnread(total > 0);
+      } catch (error) {
+        setHasUnread(false);
+      }
+    };
+
+    loadUnread();
+    window.addEventListener("syncspace:chat-updated", loadUnread);
+
+    return () => {
+      window.removeEventListener("syncspace:chat-updated", loadUnread);
+    };
+  }, []);
 
   return (
     <header className="flex h-16 sm:h-20 shrink-0 items-center justify-between border-b border-gray-100 bg-white px-3 sm:px-6 lg:px-8">
@@ -48,7 +76,9 @@ function Navbar() {
         <button className="relative" aria-label="Notifications">
           <FiBell className="text-lg text-gray-500 sm:text-2xl" />
 
-          <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500"></span>
+          {hasUnread && (
+            <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500"></span>
+          )}
         </button>
 
         <Avatar user={user} size="sm" previewable />

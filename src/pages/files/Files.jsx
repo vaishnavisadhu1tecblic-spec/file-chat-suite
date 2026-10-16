@@ -202,6 +202,8 @@ function Files() {
       // Reload folders and files.
       await Promise.all([loadFolders(), loadFiles(selectedFolder, "")]);
 
+      window.dispatchEvent(new Event("syncspace:files-updated"));
+
       alert("File uploaded successfully");
     } catch (error) {
       console.error("Upload error:", error);

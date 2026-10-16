@@ -19,10 +19,10 @@ import {
 } from "react-icons/fi";
 
 const DEFAULT_USER = {
-  name: "Alina Meyer",
-  username: "alina",
-  email: "alina@syncspace.io",
-  about: "Hey there! I am using SyncSpace.",
+  name: "",
+  username: "",
+  email: "",
+  about: "",
 };
 
 const DEFAULT_PREFERENCES = {

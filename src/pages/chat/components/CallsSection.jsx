@@ -34,7 +34,7 @@ export default function CallsSection({
   const fetchCalls = async () => {
     try {
       setLoading(true);
-      const res = await api.get("/api/calls");
+      const res = await api.get("/calls");
       setCalls(res.data?.calls || []);
     } catch (err) {
       console.error("Failed to load calls:", err);
@@ -51,7 +51,7 @@ export default function CallsSection({
   const handleDeleteCall = async (callId, e) => {
     e.stopPropagation();
     try {
-      await api.delete(`/api/calls/${callId}`);
+      await api.delete(`/calls/${callId}`);
       setCalls((prev) => prev.filter((c) => c._id !== callId));
     } catch (err) {
       console.error("Failed to delete call:", err);
@@ -62,7 +62,7 @@ export default function CallsSection({
   const handleClearAllCalls = async () => {
     if (!window.confirm("Are you sure you want to clear your call history?")) return;
     try {
-      await api.delete("/api/calls");
+      await api.delete("/calls/clear");
       setCalls([]);
       setMenuOpen(false);
     } catch (err) {

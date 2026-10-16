@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   FiGrid,
@@ -9,12 +9,17 @@ import {
   FiLogOut,
   FiX,
 } from "react-icons/fi";
+import api from "../../api/interceptors";
+import { disconnectSocketSession } from "../../socket";
 
 function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
 
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [storageUsed, setStorageUsed] = useState("0 KB");
+  const [storageQuota, setStorageQuota] = useState("100 GB");
+  const [storagePercent, setStoragePercent] = useState(0);
 
   const menus = [
     { name: "Dashboard", icon: <FiGrid />, path: "/dashboard" },
@@ -51,9 +56,37 @@ function Sidebar() {
     setMobileOpen(false);
   }, [location.pathname]);
 
+  const loadStorageUsage = useCallback(async () => {
+    try {
+      const response = await api.get("/dashboard");
+      const dashboard = response.data?.dashboard || {};
+
+      setStorageUsed(dashboard.storageUsed || "0 KB");
+      setStorageQuota(dashboard.storageQuota || "100 GB");
+      setStoragePercent(Number(dashboard.storagePercent) || 0);
+    } catch (error) {
+      console.error("Sidebar storage load failed:", error);
+      setStorageUsed("0 KB");
+      setStoragePercent(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadStorageUsage();
+
+    window.addEventListener("syncspace:files-updated", loadStorageUsage);
+    window.addEventListener("syncspace:chat-updated", loadStorageUsage);
+
+    return () => {
+      window.removeEventListener("syncspace:files-updated", loadStorageUsage);
+      window.removeEventListener("syncspace:chat-updated", loadStorageUsage);
+    };
+  }, [loadStorageUsage]);
+
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    disconnectSocketSession();
 
     setMobileOpen(false);
 
@@ -110,11 +143,16 @@ function Sidebar() {
             <div className="mb-2 flex justify-between text-xs">
               <span>Storage</span>
 
-              <span>42.6 / 100 GB</span>
+              <span>
+                {storageUsed} / {storageQuota}
+              </span>
             </div>
 
             <div className="h-2 w-full rounded-full bg-gray-200">
-              <div className="h-2 w-[43%] rounded-full bg-blue-600"></div>
+              <div
+                className="h-2 rounded-full bg-blue-600"
+                style={{ width: `${Math.min(100, Math.max(0, storagePercent))}%` }}
+              ></div>
             </div>
           </div>
 
@@ -201,11 +239,16 @@ function Sidebar() {
             <div className="mb-2 flex justify-between text-xs">
               <span>Storage</span>
 
-              <span>42.6 / 100 GB</span>
+              <span>
+                {storageUsed} / {storageQuota}
+              </span>
             </div>
 
             <div className="h-2 w-full rounded-full bg-gray-200">
-              <div className="h-2 w-[43%] rounded-full bg-blue-600"></div>
+              <div
+                className="h-2 rounded-full bg-blue-600"
+                style={{ width: `${Math.min(100, Math.max(0, storagePercent))}%` }}
+              ></div>
             </div>
           </div>
 
